@@ -88,15 +88,6 @@ const migrationInit = async function () {
   // Create an authentication helper instance using an API key
   const authHelper = await withAPIKey(apiKey);
 
-  // TODO: We still create a V1 client for now while we are in the process of converting all APIs to V2
-  const apiKeyV1 = apiKey;
-  const authHelperV1 = await withAPIKey(apiKeyV1);
-  const clientV1 = new LocationClient({
-    region: "us-west-2", // Region containing Amazon Location resource
-    customUserAgent: `migration-sdk-${PACKAGE_VERSION}`, // Append tag with SDK version to the default user agent
-    ...authHelperV1.getClientConfig(), // Configures the client to use API keys when making supported requests
-  });
-
   const placesClient = new GeoPlacesClient({
     region: region, // Region containing Amazon Location resource
     customUserAgent: `migration-sdk-${PACKAGE_VERSION}`, // Append tag with SDK version to the default user agent
@@ -117,7 +108,7 @@ const migrationInit = async function () {
   MigrationPlacesService.prototype._client = placesClient;
   MigrationSearchBox.prototype._client = placesClient;
   MigrationDirectionsService.prototype._client = routesClient;
-  MigrationDistanceMatrixService.prototype._client = clientV1;
+  MigrationDistanceMatrixService.prototype._client = routesClient;
   MigrationDistanceMatrixService.prototype._routeCalculatorName = routeCalculatorName;
 
   // Additionally, we need to create a places service for our directions service and distance matrix
