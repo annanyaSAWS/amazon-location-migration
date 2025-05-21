@@ -4,6 +4,7 @@
 import { ControlPosition, LngLat, LngLatBounds } from "maplibre-gl";
 
 import { GoogleToMaplibreControlPosition } from "./defines";
+import { GeoPlacesClient, ReverseGeocodeCommand, ReverseGeocodeRequest } from "@aws-sdk/client-geo-places";
 
 export const convertGoogleControlPositionToMapLibre = (controlPosition: number | null): ControlPosition | null => {
   if (!controlPosition) {
@@ -44,4 +45,43 @@ export function createBoundsFromPositions(positions: LngLat[]): [number, number,
     bounds.getEast(), // northeast longitude
     bounds.getNorth(), // northeast latitude
   ];
+}
+
+export function getReverseGeocodedAddresses(
+  client: GeoPlacesClient,
+  positions: number[][],
+  callback: (addresses: string[]) => void,
+) {
+  let completed = 0;
+  const addresses: string[] = new Array(positions.length).fill("");
+
+  // If no positions, return empty array
+  if (positions.length === 0) {
+    callback(addresses);
+    return;
+  }
+
+  positions.forEach((position, index) => {
+    const request: ReverseGeocodeRequest = {
+      QueryPosition: position,
+      AdditionalFeatures: ["TimeZone"],
+    };
+
+    const command = new ReverseGeocodeCommand(request);
+
+    client
+      .send(command)
+      .then((response) => {
+        addresses[index] = response.ResultItems?.[0]?.Address?.Label || "";
+      })
+      .catch((error) => {
+        console.error("Error reverse geocoding position:", error);
+      })
+      .finally(() => {
+        completed++;
+        if (completed === positions.length) {
+          callback(addresses);
+        }
+      });
+  });
 }
