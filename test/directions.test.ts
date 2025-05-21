@@ -187,7 +187,6 @@ const testRouteBounds = new MigrationLatLngBounds({
   west: -97.738545,
   south: 30.28707,
 });
-
 const mockedRoutesClientSend = jest.fn((command) => {
   return new Promise((resolve, reject) => {
     if (command instanceof CalculateRoutesCommand) {
@@ -491,10 +490,6 @@ jest.mock("@aws-sdk/client-geo-routes", () => ({
   GeoRoutesClient: jest.fn().mockImplementation(() => {
     return {
       send: mockedRoutesClientSend,
-      // Mock the serviceId because the geocoder plugin looks for this to determine GeoRoutesClient vs. LocationClient
-      config: {
-        serviceId: "Geo Routes",
-      },
     };
   }),
 }));
@@ -530,9 +525,6 @@ jest.spyOn(console, "error").mockImplementation(() => {});
 
 afterEach(() => {
   jest.clearAllMocks();
-
-  // Clear out the DOM of the body, since we add elements to it
-  document.body.innerHTML = "";
 });
 
 test("should set directionsrenderer options", () => {
@@ -1741,7 +1733,7 @@ test("should return getDistanceMatrix with origin as Place.placeId and destinati
   distanceMatrixService.getDistanceMatrix(request).then((response) => {
     // Since origin was a placeId and destination was a query input, these will trigger a
     // getDetails and findPlaceFromQuery request (respectively) to retrieve the location geometry,
-    // so there will be a total of 3 mocked LocationClient.send calls (2 for places, 1 for distance matrix)
+    // so there will be a total of 3 mocked GeoRoutesClient.send calls (2 for places, 1 for distance matrix)
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedPlacesClientSend).toHaveBeenCalledTimes(2);
     expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(SearchTextCommand));
@@ -1803,7 +1795,7 @@ test("should call getDistanceMatrix with options avoidFerries set to true and av
   });
 });
 
-test("should call getDistanceMatrix with options avoidHighways set to true", (done) => {
+test("should call getDistanceMatrix with options avoidHighways and avoidTolls set to true", (done) => {
   const request = {
     origins: [
       {
@@ -1817,13 +1809,48 @@ test("should call getDistanceMatrix with options avoidHighways set to true", (do
     ],
     travelMode: TravelMode.DRIVING,
     avoidHighways: true,
+    avoidTolls: true,
   };
 
   distanceMatrixService.getDistanceMatrix(request).then(() => {
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(
       expect.objectContaining({
         input: {
-          Avoid: { ControlledAccessHighways: true },
+          Avoid: { TollTransponders: true, TollRoads: true, ControlledAccessHighways: true },
+          Origins: [{ Position: [4, 3] }],
+          Destinations: [{ Position: [8, 7] }],
+          TravelMode: RouteTravelMode.CAR,
+          RoutingBoundary: { Geometry: { BoundingBox: [3, 4, 7, 8] }, Unbounded: false },
+        },
+      }),
+    );
+
+    done();
+  });
+});
+
+test("should call getDistanceMatrix with options avoidHighways and avoidFerries set to true", (done) => {
+  const request = {
+    origins: [
+      {
+        placeId: "KEEP_AUSTIN_WEIRD",
+      },
+    ],
+    destinations: [
+      {
+        query: "another cool place",
+      },
+    ],
+    travelMode: TravelMode.DRIVING,
+    avoidFerries: true,
+    avoidHighways: true,
+  };
+
+  distanceMatrixService.getDistanceMatrix(request).then(() => {
+    expect(mockedRoutesClientSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          Avoid: { Ferries: true, ControlledAccessHighways: true },
           Origins: [{ Position: [4, 3] }],
           Destinations: [{ Position: [8, 7] }],
           TravelMode: RouteTravelMode.CAR,
@@ -1903,76 +1930,13 @@ test("should call getDistanceMatrix with options travel mode set to walking and 
     done();
   });
 });
-test("should call getDistanceMatrix with options travel mode set to walking and unit system set to imperial", (done) => {
+
+test("getDistanceMatrix should handle client error when performing getDetails destination request", (done) => {
   const request = {
-    origins: [
-      {
-        placeId: "KEEP_AUSTIN_WEIRD",
-      },
-    ],
+    origins: ["cool place"],
     destinations: [
       {
-        query: "another cool place",
-      },
-    ],
-    travelMode: TravelMode.WALKING,
-    unitSystem: UnitSystem.IMPERIAL,
-  };
-
-  distanceMatrixService.getDistanceMatrix(request).then(() => {
-    expect(mockedRoutesClientSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: {
-          Origins: [{ Position: [4, 3] }],
-          Destinations: [{ Position: [8, 7] }],
-          TravelMode: RouteTravelMode.PEDESTRIAN,
-          RoutingBoundary: { Geometry: { BoundingBox: [3, 4, 7, 8] }, Unbounded: false },
-        },
-      }),
-    );
-
-    done();
-  });
-});
-
-test("should call getDistanceMatrix with options travel mode set to walking and unit system set to imperial", (done) => {
-  const request = {
-    origins: [
-      {
-        placeId: "KEEP_AUSTIN_WEIRD",
-      },
-    ],
-    destinations: [
-      {
-        query: "another cool place",
-      },
-    ],
-    travelMode: TravelMode.WALKING,
-    unitSystem: UnitSystem.IMPERIAL,
-  };
-
-  distanceMatrixService.getDistanceMatrix(request).then(() => {
-    expect(mockedRoutesClientSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: {
-          Origins: [{ Position: [4, 3] }],
-          Destinations: [{ Position: [8, 7] }],
-          TravelMode: RouteTravelMode.PEDESTRIAN,
-          RoutingBoundary: { Geometry: { BoundingBox: [3, 4, 7, 8] }, Unbounded: false },
-        },
-      }),
-    );
-
-    done();
-  });
-});
-
-test("getDistanceMatrix should handle client error when performing findPlaceFromQuery origin request", (done) => {
-  const request = {
-    origins: [clientErrorQuery],
-    destinations: [
-      {
-        query: "cool place",
+        placeId: clientErrorPlaceId,
       },
     ],
     travelMode: TravelMode.DRIVING,
@@ -1989,14 +1953,14 @@ test("getDistanceMatrix should handle client error when performing findPlaceFrom
     });
 });
 
-test("getDistanceMatrix should handle client error when performing findPlaceFromQuery destination request", (done) => {
+test("getDistanceMatrix should handle client error when performing findPlaceFromQuery origin request", (done) => {
   const request = {
-    origins: [
+    origins: [clientErrorQuery],
+    destinations: [
       {
-        placeId: "KEEP_AUSTIN_WEIRD",
+        query: "cool place",
       },
     ],
-    destinations: [clientErrorQuery],
     travelMode: TravelMode.DRIVING,
   };
 
@@ -2078,4 +2042,70 @@ test("getDistanceMatrix will invoke the callback if specified", (done) => {
     .then(() => {
       done();
     });
+});
+
+test("should call getDistanceMatrix with options avoidTolls set to true", (done) => {
+  const request = {
+    origins: [
+      {
+        placeId: "KEEP_AUSTIN_WEIRD",
+      },
+    ],
+    destinations: [
+      {
+        query: "another cool place",
+      },
+    ],
+    travelMode: TravelMode.DRIVING,
+    avoidTolls: true,
+  };
+
+  distanceMatrixService.getDistanceMatrix(request).then(() => {
+    expect(mockedRoutesClientSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          Avoid: { TollRoads: true, TollTransponders: true },
+          Origins: [{ Position: [4, 3] }],
+          Destinations: [{ Position: [8, 7] }],
+          TravelMode: RouteTravelMode.CAR,
+          RoutingBoundary: { Geometry: { BoundingBox: [3, 4, 7, 8] }, Unbounded: false },
+        },
+      }),
+    );
+
+    done();
+  });
+});
+
+test("should call getDistanceMatrix with options avoidHighways set to true", (done) => {
+  const request = {
+    origins: [
+      {
+        placeId: "KEEP_AUSTIN_WEIRD",
+      },
+    ],
+    destinations: [
+      {
+        query: "another cool place",
+      },
+    ],
+    travelMode: TravelMode.DRIVING,
+    avoidHighways: true,
+  };
+
+  distanceMatrixService.getDistanceMatrix(request).then(() => {
+    expect(mockedRoutesClientSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          Avoid: { ControlledAccessHighways: true },
+          Origins: [{ Position: [4, 3] }],
+          Destinations: [{ Position: [8, 7] }],
+          TravelMode: RouteTravelMode.CAR,
+          RoutingBoundary: { Geometry: { BoundingBox: [3, 4, 7, 8] }, Unbounded: false },
+        },
+      }),
+    );
+
+    done();
+  });
 });

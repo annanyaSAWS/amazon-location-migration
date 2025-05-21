@@ -22,7 +22,6 @@ import {
   parseOrFindLocation,
   parseOrFindLocations,
   ParseOrFindLocationResponse,
-  GoogleToAmazonAvoidanceMapping,
 } from "./helpers";
 
 const KILOMETERS_TO_METERS_CONSTANT = 1000;
@@ -73,14 +72,18 @@ export class MigrationDirectionsService {
                 }
               }
 
-              // Add avoidance options if specified
-              for (const [requestKey, avoidKeys] of Object.entries(GoogleToAmazonAvoidanceMapping)) {
-                if (requestKey in options) {
-                  input.Avoid ??= {};
-                  for (const avoidKey of avoidKeys) {
-                    input.Avoid[avoidKey] = options[requestKey];
-                  }
-                }
+              if ("avoidFerries" in options) {
+                input.Avoid = {
+                  Ferries: options.avoidFerries,
+                };
+              }
+
+              if ("avoidTolls" in options) {
+                // Create Avoid sub-object if it doesn't exist already
+                input.Avoid ??= {};
+
+                input.Avoid.TollRoads = options.avoidTolls;
+                input.Avoid.TollTransponders = options.avoidTolls;
               }
 
               if (options.drivingOptions?.departureTime) {

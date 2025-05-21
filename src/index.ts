@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { withAPIKey } from "@aws/amazon-location-utilities-auth-helper";
-import { LocationClient } from "@aws-sdk/client-location";
 import { GeoPlacesClient } from "@aws-sdk/client-geo-places";
 import { GeoRoutesClient } from "@aws-sdk/client-geo-routes";
 
@@ -74,9 +73,6 @@ const apiKey = urlParams.get("apiKey");
 const defaultRegion = "us-west-2";
 const region = urlParams.get("region") || defaultRegion;
 
-// Optional, but if user wants to perform any Route requests, this is required
-const routeCalculatorName = urlParams.get("routeCalculator");
-
 // Optional, will invoke after migrationInit has finished executing
 const postMigrationCallback = urlParams.get("callback");
 
@@ -109,7 +105,6 @@ const migrationInit = async function () {
   MigrationSearchBox.prototype._client = placesClient;
   MigrationDirectionsService.prototype._client = routesClient;
   MigrationDistanceMatrixService.prototype._client = routesClient;
-  MigrationDistanceMatrixService.prototype._routeCalculatorName = routeCalculatorName;
 
   // Additionally, we need to create a places service for our directions service and distance matrix
   // service to use, since it can optionally be passed source/destinations that are string queries

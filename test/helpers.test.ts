@@ -1,54 +1,46 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { createProgressiveBounds, RouteMatrixPosition } from "../src/common";
+import { createBoundsFromPositions } from "../src/common";
+import { LngLat } from "maplibre-gl";
 
-// Spy on console.error so we can verify it gets called in error cases
-jest.spyOn(console, "error").mockImplementation(() => {});
-
-afterEach(() => {
-  jest.clearAllMocks();
-});
-
-describe("createProgressiveBounds", () => {
-  test("should return correct bounds for single pair of points", () => {
-    // Input is in lat,lng format which is used in Amazon Location
-    const origins: RouteMatrixPosition[] = [
-      { Position: [37.7749, -122.4194] }, // [lat, lng]
-    ];
-    const destinations: RouteMatrixPosition[] = [
-      { Position: [40.7128, -74.006] }, // [lat, lng]
+describe("createBoundsFromPositions", () => {
+  test("should return correct bounds for multiple positions", () => {
+    const positions: LngLat[] = [
+      new LngLat(-122.4194, 37.7749), // San Francisco
+      new LngLat(-74.006, 40.7128), // New York
+      new LngLat(-87.6298, 41.8781), // Chicago
     ];
 
-    const bounds = createProgressiveBounds(origins, destinations);
+    const result = createBoundsFromPositions(positions);
 
-    expect(bounds).toEqual([-122.4194, 37.7749, -74.006, 40.7128]);
+    expect(result).toEqual([-122.4194, 37.7749, -74.006, 41.8781]);
   });
 
-  test("should return correct bounds for multiple pairs of points", () => {
-    // Input in lat,lng format
-    const origins: RouteMatrixPosition[] = [
-      { Position: [37.7749, -122.4194] }, // San Francisco [lat, lng]
-      { Position: [34.0522, -118.2437] }, // Los Angeles [lat, lng]
-      { Position: [32.7157, -117.1611] }, // San Diego [lat, lng]
-    ];
-    const destinations: RouteMatrixPosition[] = [
-      { Position: [40.7128, -74.006] }, // New York [lat, lng]
-      { Position: [41.8781, -87.6298] }, // Chicago [lat, lng]
-      { Position: [39.9526, -75.1652] }, // Philadelphia [lat, lng]
+  test("should handle single position", () => {
+    const positions: LngLat[] = [
+      new LngLat(-122.4194, 37.7749), // San Francisco
     ];
 
-    const bounds = createProgressiveBounds(origins, destinations);
+    const result = createBoundsFromPositions(positions);
 
-    expect(bounds).toEqual([-122.4194, 32.7157, -74.006, 41.8781]);
+    expect(result).toEqual([-122.4194, 37.7749, -122.4194, 37.7749]);
   });
 
-  test("should throw error when arrays have different lengths", () => {
-    const origins: RouteMatrixPosition[] = [{ Position: [37.7749, -122.4194] }];
-    const destinations: RouteMatrixPosition[] = [{ Position: [40.7128, -74.006] }, { Position: [41.8781, -87.6298] }];
+  test("should handle positions in different quadrants", () => {
+    const positions: LngLat[] = [
+      new LngLat(-122.4194, 37.7749), // San Francisco (Northwest)
+      new LngLat(151.2093, -33.8688), // Sydney (Southeast)
+      new LngLat(139.6917, 35.6895), // Tokyo (Northeast)
+      new LngLat(-58.3816, -34.6037), // Buenos Aires (Southwest)
+    ];
 
-    expect(() => createProgressiveBounds(origins, destinations)).toThrow(
-      "Origin and destination arrays must be of equal length",
-    );
+    const result = createBoundsFromPositions(positions);
+
+    expect(result).toEqual([-122.4194, -34.6037, 151.2093, 37.7749]);
+  });
+
+  test("should throw error for empty array", () => {
+    expect(() => createBoundsFromPositions([])).toThrow();
   });
 });

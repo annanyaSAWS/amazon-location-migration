@@ -16,23 +16,17 @@ import { DistanceMatrixElementStatus, DistanceMatrixStatus, TravelMode } from ".
 import {
   convertKilometersToGoogleDistanceText,
   formatSecondsAsGoogleDurationText,
-  GoogleToAmazonAvoidanceMapping,
   parseOrFindLocations,
 } from "./helpers";
-import { createProgressiveBounds } from "../common";
+import { createBoundsFromPositions } from "../common";
+import { LngLat } from "maplibre-gl";
 
 // formatted_address needed for originAddresses and destinationAddresses
 const DISTANCE_MATRIX_FIND_LOCATION_FIELDS = ["geometry", "formatted_address"];
 const KILOMETERS_TO_METERS_CONSTANT = 1000;
 
 export class MigrationDistanceMatrixService {
-  // This will be populated by the top level module
-  // that creates our location client
   _client: GeoRoutesClient;
-
-  // This will be populated by the top level module
-  // that is passed our route calculator name
-  _routeCalculatorName: string;
 
   // This will be populated by the top level module
   // that already has a MigrationPlacesService that has
@@ -54,13 +48,19 @@ export class MigrationDistanceMatrixService {
                 Position: destination.position,
               }));
 
+              // Combine all positions and convert from [lat,lng] to [lng,lat] using LngLat
+              const allPositions: LngLat[] = [
+                ...origins.map((origin) => new LngLat(origin.Position[1], origin.Position[0])),
+                ...destinations.map((destination) => new LngLat(destination.Position[1], destination.Position[0])),
+              ];
+
               const input: CalculateRouteMatrixRequest = {
                 Origins: origins, // required
                 Destinations: destinations, // required
                 RoutingBoundary: {
                   // required
                   Geometry: {
-                    BoundingBox: createProgressiveBounds(origins, destinations),
+                    BoundingBox: createBoundsFromPositions(allPositions),
                   },
                   Unbounded: false,
                 },
@@ -79,14 +79,25 @@ export class MigrationDistanceMatrixService {
                 }
               }
 
-              // Add avoidance options if specified
-              for (const [requestKey, avoidKeys] of Object.entries(GoogleToAmazonAvoidanceMapping)) {
-                if (requestKey in request) {
-                  input.Avoid ??= {};
-                  for (const avoidKey of avoidKeys) {
-                    input.Avoid[avoidKey] = request[requestKey];
-                  }
-                }
+              if (request.avoidTolls) {
+                input.Avoid = {
+                  TollRoads: true,
+                  TollTransponders: true,
+                };
+              }
+
+              if (request.avoidFerries) {
+                input.Avoid = {
+                  ...input.Avoid,
+                  Ferries: true,
+                };
+              }
+
+              if (request.avoidHighways) {
+                input.Avoid = {
+                  ...input.Avoid,
+                  ControlledAccessHighways: true,
+                };
               }
 
               // Add departure time if specified

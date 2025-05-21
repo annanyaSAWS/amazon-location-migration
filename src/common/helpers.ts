@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { ControlPosition, LngLatBounds } from "maplibre-gl";
+import { ControlPosition, LngLat, LngLatBounds } from "maplibre-gl";
 
 import { GoogleToMaplibreControlPosition } from "./defines";
 
@@ -19,31 +19,11 @@ export const convertGoogleControlPositionToMapLibre = (controlPosition: number |
   return null;
 };
 
-export interface RouteMatrixPosition {
-  Position: number[]; // [lat, lng]
-}
-
-export function createProgressiveBounds(
-  origins: RouteMatrixPosition[],
-  destinations: RouteMatrixPosition[],
-): [number, number, number, number] {
-  // [sw_lng, sw_lat, ne_lng, ne_lat]
-  if (origins.length !== destinations.length) {
-    throw new Error("Origin and destination arrays must be of equal length");
-  }
-
+export function createBoundsFromPositions(positions: LngLat[]): [number, number, number, number] {
   const bounds = new LngLatBounds();
 
-  origins.forEach((origin) => {
-    const [lat, lng] = origin.Position;
-    // Convert to lng,lat for MapLibre
-    bounds.extend([lng, lat]);
-  });
-
-  destinations.forEach((destination) => {
-    const [lat, lng] = destination.Position;
-    // Convert to lng,lat for MapLibre
-    bounds.extend([lng, lat]);
+  positions.forEach((position) => {
+    bounds.extend(position);
   });
 
   return [
