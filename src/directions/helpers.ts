@@ -1,10 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { MigrationLatLng, PlacesServiceStatus } from "../common";
+import { LatLngToLngLat, MigrationLatLng, PlacesServiceStatus } from "../common";
 import { MigrationPlacesService } from "../places";
 
 import { UnitSystem } from "./defines";
+import { GeoPlacesClient, ReverseGeocodeCommand, ReverseGeocodeRequest } from "@aws-sdk/client-geo-places";
 
 const KILOMETERS_TO_MILES_CONSTANT = 0.621371;
 
@@ -116,4 +117,49 @@ export function convertKilometersToGoogleDistanceText(kilometers, options) {
   return "unitSystem" in options && options.unitSystem == UnitSystem.IMPERIAL
     ? kilometers * KILOMETERS_TO_MILES_CONSTANT + " mi"
     : kilometers + " km";
+}
+
+/**
+ * Determines the appropriate unit system based on the country of the provided coordinates.
+ * Returns UnitSystem.IMPERIAL for addresses in US, Liberia, and Myanmar,
+ * and UnitSystem.METRIC for all other countries.
+ *
+ * @param client - GeoPlacesClient instance for reverse geocoding
+ * @param position - Array of [latitude, longitude] coordinates
+ * @param callback - Function to be called with the determined UnitSystem
+ *
+ * Eg:getUnitSystemFromLatLong(client, [37.7749, -122.4194], (unitSystem)) => IMPERIAL
+ */
+export function getUnitSystemFromLatLong(
+  client: GeoPlacesClient,
+  position: number[],
+  callback: (unitSystem: UnitSystem) => void
+) {
+
+  const lngLat = LatLngToLngLat(position);
+
+  const request: ReverseGeocodeRequest = {
+    QueryPosition: lngLat,
+    AdditionalFeatures: ["TimeZone"],
+  };
+  const command = new ReverseGeocodeCommand(request);
+
+  client.send(command)
+    .then(response => {
+      const address = response.ResultItems?.[0]?.Address;
+      const countryCode = address?.Country?.Code3 || '';
+
+      // Check if the country uses imperial system
+      const imperialCountries = ['USA', 'MMR', 'LBR']; // US, Myanmar, Liberia
+      const unitSystem = imperialCountries.includes(countryCode)
+        ? UnitSystem.IMPERIAL
+        : UnitSystem.METRIC;
+
+      callback(unitSystem);
+    })
+    .catch(error => {
+      console.error('Error determining unit system:', error);
+      // Default to metric in case of error
+      callback(UnitSystem.METRIC);
+    });
 }
