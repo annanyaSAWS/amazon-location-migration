@@ -1989,7 +1989,7 @@ test("getDistanceMatrix should handle client error", (done) => {
     .getDistanceMatrix(request)
     .then(() => {})
     .catch((error) => {
-      expect(error.status).toStrictEqual(DistanceMatrixStatus.INVALID_REQUEST);
+      expect(error.status).toStrictEqual(DistanceMatrixStatus.UNKNOWN_ERROR);
       expect(console.error).toHaveBeenCalledTimes(1);
 
       // Signal the unit test is complete

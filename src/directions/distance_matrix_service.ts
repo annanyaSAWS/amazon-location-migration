@@ -107,7 +107,7 @@ export class MigrationDistanceMatrixService {
                   console.error(error);
 
                   reject({
-                    status: DistanceMatrixStatus.INVALID_REQUEST,
+                    status: DistanceMatrixStatus.UNKNOWN_ERROR,
                   });
                 });
             })
