@@ -19,6 +19,18 @@ export const convertGoogleControlPositionToMapLibre = (controlPosition: number |
   return null;
 };
 
+/**
+ * Creates a bounding box that encompasses all provided positions. Returns coordinates in the format
+ * [southwest_longitude, southwest_latitude, northeast_longitude, northeast_latitude] suitable for use with Amazon
+ * Location Service.
+ *
+ * @example Const positions = [ new LngLat(-122.4194, 37.7749), // San Francisco new LngLat(-74.0060, 40.7128) // New
+ * York ]; const bounds = createBoundsFromPositions(positions); // returns [-122.4194, 37.7749, -74.0060, 40.7128]
+ *
+ * @param positions - Array of positions in [longitude, latitude] format
+ * @returns Four numbers representing the bounding box corners: [southwest_longitude, southwest_latitude,
+ *   northeast_longitude, northeast_latitude]
+ */
 export function createBoundsFromPositions(positions: LngLat[]): [number, number, number, number] {
   const bounds = new LngLatBounds();
 
