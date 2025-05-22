@@ -17,6 +17,7 @@ import {
   convertKilometersToGoogleDistanceText,
   formatSecondsAsGoogleDurationText,
   parseOrFindLocations,
+  populateAvoidOptions,
 } from "./helpers";
 import { createBoundsFromPositions } from "../common";
 import { LngLat } from "maplibre-gl";
@@ -29,8 +30,6 @@ export class MigrationDistanceMatrixService {
   _client: GeoRoutesClient;
 
   // This will be populated by the top level module
-  // that already has a MigrationPlacesService that has
-  // been configured
   _placesService: MigrationPlacesService;
 
   getDistanceMatrix(request: google.maps.DistanceMatrixRequest, callback?) {
@@ -79,26 +78,7 @@ export class MigrationDistanceMatrixService {
                 }
               }
 
-              if (request.avoidTolls) {
-                input.Avoid = {
-                  TollRoads: true,
-                  TollTransponders: true,
-                };
-              }
-
-              if (request.avoidFerries) {
-                input.Avoid = {
-                  ...input.Avoid,
-                  Ferries: true,
-                };
-              }
-
-              if (request.avoidHighways) {
-                input.Avoid = {
-                  ...input.Avoid,
-                  ControlledAccessHighways: true,
-                };
-              }
+              populateAvoidOptions(request, input);
 
               // Add departure time if specified
               if (request.drivingOptions?.departureTime) {

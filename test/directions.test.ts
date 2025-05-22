@@ -1733,7 +1733,7 @@ test("should return getDistanceMatrix with origin as Place.placeId and destinati
   distanceMatrixService.getDistanceMatrix(request).then((response) => {
     // Since origin was a placeId and destination was a query input, these will trigger a
     // getDetails and findPlaceFromQuery request (respectively) to retrieve the location geometry,
-    // so there will be a total of 3 mocked GeoRoutesClient.send calls (2 for places, 1 for distance matrix)
+    // so there will be a total of 2 mocked GeoPlacesClient.send calls (for the places query) and  1 mocked GeoRoutesClient.send call for distance matrix
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedPlacesClientSend).toHaveBeenCalledTimes(2);
     expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(SearchTextCommand));

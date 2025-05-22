@@ -5,6 +5,7 @@ import { MigrationLatLng, PlacesServiceStatus } from "../common";
 import { MigrationPlacesService } from "../places";
 
 import { UnitSystem } from "./defines";
+import { CalculateRouteMatrixRequest, CalculateRoutesRequest } from "@aws-sdk/client-geo-routes";
 
 const KILOMETERS_TO_MILES_CONSTANT = 0.621371;
 
@@ -116,4 +117,47 @@ export function convertKilometersToGoogleDistanceText(kilometers, options) {
   return "unitSystem" in options && options.unitSystem == UnitSystem.IMPERIAL
     ? kilometers * KILOMETERS_TO_MILES_CONSTANT + " mi"
     : kilometers + " km";
+}
+
+/**
+ * Populates avoidance options for Amazon Location Service routes based on Google Maps API request.
+ *
+ * This function takes a Google Maps Distance Matrix or Directions request and populates the corresponding Amazon
+ * Location Service avoidance options in the input object.
+ *
+ * Avoidance options include:
+ *
+ * - Toll roads and transponders (if avoidTolls is true)
+ * - Ferries (if avoidFerries is true)
+ * - Controlled access highways (if avoidHighways is true)
+ *
+ * The function modifies the input object in-place, adding or updating the Avoid property.
+ *
+ * @param request - Google Maps API request object (DistanceMatrix or Directions)
+ * @param input - Amazon Location Service request object to be populated
+ */
+export function populateAvoidOptions(
+  request: google.maps.DistanceMatrixRequest | google.maps.DirectionsRequest,
+  input: CalculateRouteMatrixRequest | CalculateRoutesRequest,
+) {
+  if (request.avoidTolls) {
+    input.Avoid = {
+      TollRoads: true,
+      TollTransponders: true,
+    };
+  }
+
+  if (request.avoidFerries) {
+    input.Avoid = {
+      ...input.Avoid,
+      Ferries: true,
+    };
+  }
+
+  if (request.avoidHighways) {
+    input.Avoid = {
+      ...input.Avoid,
+      ControlledAccessHighways: true,
+    };
+  }
 }
