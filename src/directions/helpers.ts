@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { MigrationLatLng, PlacesServiceStatus } from "../common";
+import { LatLngToLngLat, MigrationLatLng, PlacesServiceStatus } from "../common";
 import { MigrationPlacesService } from "../places";
 
 import { UnitSystem } from "./defines";
@@ -9,6 +9,7 @@ import { CalculateRouteMatrixRequest, CalculateRoutesRequest } from "@aws-sdk/cl
 import { GeoPlacesClient, ReverseGeocodeCommand, ReverseGeocodeRequest } from "@aws-sdk/client-geo-places";
 
 const KILOMETERS_TO_MILES_CONSTANT = 0.621371;
+const FEET_TO_MILES_CONSTANT = 5280; // 1 mile is 5,280 feet or 1.60934 kilometres
 
 export interface ParseOrFindLocationResponse {
   locationLatLng: MigrationLatLng;
@@ -114,12 +115,6 @@ export function formatSecondsAsGoogleDurationText(seconds) {
   return parts.join(" ");
 }
 
-export function convertKilometersToGoogleDistanceText(kilometers, options) {
-  return "unitSystem" in options && options.unitSystem == UnitSystem.IMPERIAL
-    ? kilometers * KILOMETERS_TO_MILES_CONSTANT + " mi"
-    : kilometers + " km";
-}
-
 /**
  * Populates avoidance options for Amazon Location Service routes based on Google Maps API request.
  *
@@ -202,3 +197,96 @@ export function getReverseGeocodedAddresses(
       callback(new Array(positions.length).fill(""));
     });
 }
+
+/**
+ * Determines the appropriate unit system based on the country of the provided coordinates. Returns UnitSystem.IMPERIAL
+ * for addresses in US, Liberia, and Myanmar, and UnitSystem.METRIC for all other countries.
+ *
+ * @param client - GeoPlacesClient instance for reverse geocoding
+ * @param position - Array of [latitude, longitude] coordinates
+ * @param callback - Function to be called with the determined UnitSystem
+ */
+export function getUnitSystemFromLatLong(
+  client: GeoPlacesClient,
+  position: number[],
+  callback: (unitSystem: UnitSystem) => void,
+) {
+  const lngLat = LatLngToLngLat(position);
+
+  const request: ReverseGeocodeRequest = {
+    QueryPosition: lngLat,
+    AdditionalFeatures: ["TimeZone"],
+  };
+  const command = new ReverseGeocodeCommand(request);
+
+  client
+    .send(command)
+    .then((response) => {
+      const address = response?.ResultItems?.[0]?.Address;
+      const countryCode = address?.Country?.Code3 || "";
+
+      // Check if the country uses imperial system
+      const imperialCountries = ["USA", "MMR", "LBR"]; // US, Myanmar, Liberia
+      const unitSystem = imperialCountries.includes(countryCode) ? UnitSystem.IMPERIAL : UnitSystem.METRIC;
+
+      callback(unitSystem);
+    })
+    .catch(() => {
+      // Default to metric in case of error
+      callback(UnitSystem.METRIC);
+    });
+}
+
+/**
+ * Formats a distance value based on the specified unit system (metric or imperial).
+ *
+ * Metric formatting rules:
+ *
+ * 1. < 1 km: Format in meters, rounded to nearest meter ("750 m")
+ * 2. 1 km to 999 km: Format in km with one decimal place ("12.5 km", "542.0 km")
+ * 3. > = 1000 km: Format in km with no decimal places and thousands separator ("1,234 km")
+ *
+ * Imperial formatting rules:
+ *
+ * 1. < 0.1 miles: Format in feet, rounded to nearest foot ("528 ft")
+ * 2. 0.1 miles to 999 miles: Format in miles with one decimal place ("0.5 mi", "12.0 mi", "542.0 mi")
+ * 3. > = 1000 miles: Format in miles with no decimal places and thousands separator ("1,234 mi")
+ *
+ * @param meters - The distance in meters
+ * @param options - Configuration object containing unitSystem preference
+ * @returns Formatted distance string with unit suffix
+ */
+export function formatDistanceBasedOnUnitSystem(meters: number, options: { unitSystem?: UnitSystem }): string {
+  const isImperial = options.unitSystem === UnitSystem.IMPERIAL;
+  const kilometers = meters / 1000;
+  const miles = kilometers * KILOMETERS_TO_MILES_CONSTANT;
+
+  if (isImperial) {
+    return formatImperialDistance(miles);
+  }
+  return formatMetricDistance(kilometers, meters);
+}
+
+function formatImperialDistance(miles: number): string {
+  if (miles < 0.1) return `${Math.round(miles * FEET_TO_MILES_CONSTANT)} ft`;
+  if (miles < 1000) return `${numberFormatter.format(miles)} mi`;
+  return `${largeNumberFormatter.format(miles)} mi`;
+}
+
+function formatMetricDistance(km: number, meters: number): string {
+  if (km < 1) return `${Math.round(meters)} m`;
+  if (km < 1000) return `${numberFormatter.format(km)} km`;
+  return `${largeNumberFormatter.format(km)} km`;
+}
+
+// pre-configured formatter for numbers that may have 1 decimal place
+export const numberFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+// pre-configured formatter for large numbers with thousands separators and no decimals
+export const largeNumberFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 0,
+  useGrouping: true,
+});

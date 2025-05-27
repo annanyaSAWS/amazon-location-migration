@@ -13,6 +13,7 @@ import {
 } from "../src/directions";
 import { MigrationPlacesService } from "../src/places";
 import { DirectionsStatus, MigrationLatLng, MigrationLatLngBounds } from "../src/common";
+import * as directionsHelpers from "../src/directions/helpers";
 
 const mockAddControl = jest.fn();
 const mockFitBounds = jest.fn();
@@ -2846,10 +2847,14 @@ test("should return route with origin as LatLng and destination as LatLng", (don
   };
 
   directionsService.route(request).then((response) => {
-    // Since origin and destination are both specified as parseable values, the only mocked
-    // GeoPlacesClient call should be the CalculateRoutesCommand
+    // Since origin and destination are both specified as parseable values, they will be one
+    // GeoRoutesClient call for the CalculateRoutesCommand
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
+    // To find out the correct unit system to use, the first origin will be reverse geocoded
+    // with GeoPlacesClient's ReverseGeocodeCommand command
+    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(1);
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
 
     const routes = response.routes;
 
@@ -2888,9 +2893,13 @@ test("should return route with origin as LatLng and destination as Place.locatio
 
   directionsService.route(request).then((response) => {
     // Since origin and destination are both specified as parseable values, the only mocked
-    // GeoPlacesClient call should be the CalculateRoutesCommand
+    // GeoRoutesClient call should be the CalculateRoutesCommand
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
+    // To find out the correct unit system to use, the first origin will be reverse geocoded
+    // with GeoPlacesClient's ReverseGeocodeCommand command
+    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(1);
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
 
     const routes = response.routes;
     expect(routes.length).toStrictEqual(1);
@@ -2916,6 +2925,10 @@ test("should return route with origin as Place.location and destination as LatLn
     // GeoPlacesClient call should be the CalculateRoutesCommand
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
+    // To find out the correct unit system to use, the first origin will be reverse geocoded
+    // with GeoPlacesClient's ReverseGeocodeCommand command
+    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(1);
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
 
     const routes = response.routes;
     expect(routes.length).toStrictEqual(1);
@@ -2943,6 +2956,10 @@ test("should return route with origin as Place.location and destination as Place
     // GeoPlacesClient call should be the CalculateRoutesCommand
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
+    // To find out the correct unit system to use, the first origin will be reverse geocoded
+    // with GeoPlacesClient's ReverseGeocodeCommand command
+    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(1);
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
 
     const routes = response.routes;
     expect(routes.length).toStrictEqual(1);
@@ -2962,12 +2979,14 @@ test("should return route with origin as string and destination as Place.query",
 
   directionsService.route(request).then((response) => {
     // Since both origin and destination were query inputs, these will both trigger a
-    // findPlaceFromQuery request to retrieve the location geometry, so there
-    // will be a total of 3 mocked send calls (2 for places, 1 for routes)
+    // findPlaceFromQuery request to retrieve the location geometry, and to find out the correct unit system to use,
+    // the first origin will be reverse geocoded with GeoPlacesClient's ReverseGeocodeCommand command
+    // will be a total of 4 mocked send calls (3 for places, 1 for routes)
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
-    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(2);
+    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(3);
     expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(SearchTextCommand));
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
 
     const routes = response.routes;
     expect(routes.length).toStrictEqual(1);
@@ -2990,12 +3009,15 @@ test("should return route with origin as Place.placeId and destination as Place.
   directionsService.route(request).then((response) => {
     // Since origin was a placeId and destination was a query input, these will trigger a
     // getDetails and findPlaceFromQuery request (respectively) to retrieve the location geometry,
-    // so there will be a total of 3 mocked send calls (2 for places, 1 for routes)
+    // and to find out the correct unit system to use,
+    // the first origin will be reverse geocoded with GeoPlacesClient's ReverseGeocodeCommand command
+    // will be a total of 4 mocked send calls (3 for places, 1 for routes)
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
-    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(2);
+    expect(mockedPlacesClientSend).toHaveBeenCalledTimes(3);
     expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(SearchTextCommand));
     expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(GetPlaceCommand));
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
 
     const geocodedWaypoints = response.geocoded_waypoints;
     const routes = response.routes;
@@ -3015,8 +3037,8 @@ test("should return route with origin as Place.placeId and destination as Place.
     const start_location = leg.start_location;
     const end_location = leg.end_location;
     expect(distance).toStrictEqual({
-      text: "4047 km",
-      value: 4047000,
+      text: "4.0 km",
+      value: 4047,
     });
     expect(steps.length).toStrictEqual(7);
     expect(duration).toStrictEqual({
@@ -3050,9 +3072,13 @@ test("should return route with origin as LatLng and destination as LatLng with c
   directionsService
     .route(request, (results, status) => {
       // Since origin and destination are both specified as parseable values, the only mocked
-      // GeoPlacesClient call should be the CalculateRoutesCommand
+      // GeoRoutesClient call should be the CalculateRoutesCommand
+      // and to find out the correct unit system to use,
+      // the first origin will be reverse geocoded with GeoPlacesClient's ReverseGeocodeCommand command
       expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
       expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
+      expect(mockedPlacesClientSend).toHaveBeenCalledTimes(1);
+      expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
 
       const routes = results.routes;
       expect(routes.length).toStrictEqual(1);
@@ -3193,7 +3219,6 @@ test("should handle waypoint stopover being set to true", (done) => {
         location: {
           query: "another cool place",
         },
-        stopover: true,
       },
     ],
   };
@@ -3485,8 +3510,8 @@ test("should return getDistanceMatrix with origin as Place.placeId and destinati
 
     const element = row.elements[0];
     expect(element.distance).toStrictEqual({
-      text: "12 km",
-      value: 12000,
+      text: "12 m",
+      value: 12,
     });
     expect(element.duration).toStrictEqual({
       text: "1 min",
@@ -3770,8 +3795,8 @@ test("getDistanceMatrix will invoke the callback if specified", (done) => {
 
       const element = row.elements[0];
       expect(element.distance).toStrictEqual({
-        text: "12 km",
-        value: 12000,
+        text: "12 m",
+        value: 12,
       });
       expect(element.duration).toStrictEqual({
         text: "1 min",
@@ -3850,4 +3875,174 @@ test("should call getDistanceMatrix with options avoidHighways set to true", (do
 
     done();
   });
+});
+
+test("should determine unit system from origin location when not specified in request", (done) => {
+  const request = {
+    origins: [
+      {
+        placeId: "KEEP_AUSTIN_WEIRD",
+      },
+    ],
+    destinations: [
+      {
+        query: "another cool place",
+      },
+    ],
+    travelMode: TravelMode.DRIVING,
+  };
+
+  distanceMatrixService.getDistanceMatrix(request).then((response) => {
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          QueryPosition: expect.any(Array),
+        }),
+      }),
+    );
+
+    const rows = response.rows;
+    expect(rows[0].elements[0].distance.text).toContain("m");
+    done();
+  });
+});
+
+test("should default to metric unit system when reverse geocoding fails", (done) => {
+  const mockClient = {
+    send: jest.fn().mockRejectedValue(new Error("Mocked error")),
+  } as unknown as GeoPlacesClient;
+
+  const getUnitSystemSpy = jest.spyOn(directionsHelpers, "getUnitSystemFromLatLong");
+
+  directionsHelpers.getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
+    expect(mockClient.send).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
+    expect(getUnitSystemSpy).toHaveBeenCalled();
+    expect(unitSystem).toBe(UnitSystem.METRIC);
+
+    getUnitSystemSpy.mockRestore();
+    done();
+  });
+});
+
+test("should determine unit system from origin location when not specified in request", (done) => {
+  const request = {
+    origins: [
+      {
+        placeId: "KEEP_AUSTIN_WEIRD",
+      },
+    ],
+    destinations: [
+      {
+        query: "another cool place",
+      },
+    ],
+    travelMode: TravelMode.DRIVING,
+  };
+
+  distanceMatrixService.getDistanceMatrix(request).then((response) => {
+    expect(mockedPlacesClientSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          QueryPosition: expect.any(Array),
+        }),
+      }),
+    );
+
+    const rows = response.rows;
+    expect(rows[0].elements[0].distance.text).toContain("m");
+    done();
+  });
+});
+
+test("should determine unit system when not specified and locationLatLng exists", (done) => {
+  const request = {
+    origins: [
+      {
+        placeId: "KEEP_AUSTIN_WEIRD",
+      },
+    ],
+    destinations: [
+      {
+        query: "another cool place",
+      },
+    ],
+    travelMode: TravelMode.DRIVING,
+  };
+
+  const mockOriginsResponse = [
+    {
+      position: [4, 3],
+      locationLatLng: {
+        lat: () => 3,
+        lng: () => 4,
+      },
+    },
+  ];
+
+  const mockDestinationsResponse = [
+    {
+      position: [8, 7],
+    },
+  ];
+
+  const mockMatrixResponse = {
+    RouteMatrix: [[{ Distance: 12, DurationSeconds: 24 }]],
+  };
+
+  distanceMatrixService
+    ._convertAmazonResponseToGoogleResponse(mockMatrixResponse, mockOriginsResponse, mockDestinationsResponse, request)
+    .then((response) => {
+      console.log(JSON.stringify(mockedPlacesClientSend.mock.calls));
+      expect(mockedPlacesClientSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            QueryPosition: [4, 3],
+          }),
+        }),
+      );
+
+      expect(response.rows[0].elements[0].distance.text).toBeDefined();
+      const rows = response.rows;
+      expect(rows[0].elements[0].distance.text).toContain("m");
+      done();
+    });
+});
+
+test("should skip unit system determination when locationLatLng is missing", (done) => {
+  const request = {
+    origins: [
+      {
+        placeId: "KEEP_AUSTIN_WEIRD",
+      },
+    ],
+    destinations: [
+      {
+        query: "another cool place",
+      },
+    ],
+    travelMode: TravelMode.DRIVING,
+  };
+
+  const mockOriginsResponse = [{ position: [4, 3] }];
+  const mockDestinationsResponse = [{ position: [8, 7] }];
+  const mockMatrixResponse = {
+    RouteMatrix: [[{ Distance: 12, DurationSeconds: 24 }]],
+  };
+
+  distanceMatrixService
+    ._convertAmazonResponseToGoogleResponse(mockMatrixResponse, mockOriginsResponse, mockDestinationsResponse, request)
+    .then((response) => {
+      expect(mockedPlacesClientSend).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            AdditionalFeatures: ["TimeZone"],
+          }),
+        }),
+      );
+
+      expect(response.rows[0].elements[0].distance.text).toBeDefined();
+      expect(response.rows[0].elements[0].distance.text).toContain("m");
+
+      done();
+    });
 });

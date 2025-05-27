@@ -14,11 +14,12 @@ import { MigrationPlacesService } from "../places";
 
 import { DistanceMatrixElementStatus, DistanceMatrixStatus, TravelMode } from "./defines";
 import {
-  convertKilometersToGoogleDistanceText,
+  formatDistanceBasedOnUnitSystem,
   formatSecondsAsGoogleDurationText,
   parseOrFindLocations,
   populateAvoidOptions,
   getReverseGeocodedAddresses,
+  getUnitSystemFromLatLong,
 } from "./helpers";
 
 import { createBoundsFromPositions } from "../common";
@@ -26,7 +27,6 @@ import { LngLat } from "maplibre-gl";
 
 // formatted_address needed for originAddresses and destinationAddresses
 const DISTANCE_MATRIX_FIND_LOCATION_FIELDS = ["geometry", "formatted_address"];
-const KILOMETERS_TO_METERS_CONSTANT = 1000;
 
 export class MigrationDistanceMatrixService {
   _client: GeoRoutesClient;
@@ -137,11 +137,22 @@ export class MigrationDistanceMatrixService {
     request,
   ): Promise<google.maps.DistanceMatrixResponse> {
     return new Promise((resolve) => {
+      // Determine unit system if not specified in options
+      let unitSystem = request.unitSystem;
+      if (!("unitSystem" in request) && originsResponse.locationLatLng) {
+        getUnitSystemFromLatLong(
+          this._placesService._client,
+          [originsResponse.locationLatLng.lat(), originsResponse.locationLatLng.lng()],
+          (determinedUnitSystem) => {
+            unitSystem = determinedUnitSystem;
+          },
+        );
+      }
       const distanceMatrixResponseRows = calculateRouteMatrixResponse.RouteMatrix.map((row) => ({
         elements: row.map((cell) => ({
           distance: {
-            text: convertKilometersToGoogleDistanceText(cell.Distance, request),
-            value: cell.Distance * KILOMETERS_TO_METERS_CONSTANT,
+            text: formatDistanceBasedOnUnitSystem(cell.Distance, { ...request, unitSystem }),
+            value: cell.Distance, // value always in meters, Distance is also always in meters
           },
           duration: {
             text: formatSecondsAsGoogleDurationText(cell.DurationSeconds),
