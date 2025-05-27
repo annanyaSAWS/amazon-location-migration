@@ -17,15 +17,15 @@ import { DirectionsStatus, MigrationLatLng, MigrationLatLngBounds } from "../com
 import { TravelMode } from "./defines";
 import { MigrationPlacesService } from "../places";
 import {
-  convertKilometersToGoogleDistanceText,
+  formatDistanceBasedOnUnitSystem,
   formatSecondsAsGoogleDurationText,
   parseOrFindLocation,
   parseOrFindLocations,
   ParseOrFindLocationResponse,
   populateAvoidOptions,
+  getUnitSystem,
 } from "./helpers";
 
-const KILOMETERS_TO_METERS_CONSTANT = 1000;
 // place_id and types needed for geocoded_waypoints response property, formatted_address needed for leg start_address and end_address
 const ROUTE_FIND_LOCATION_FIELDS = ["geometry", "place_id", "types", "formatted_address"];
 
@@ -187,11 +187,14 @@ export class MigrationDirectionsService {
 
   _convertAmazonResponseToGoogleResponse(
     response: CalculateRoutesResponse,
-    options,
+    options: google.maps.DirectionsRequest,
     originResponse,
     destinationResponse,
     waypointResponses?,
   ) {
+
+    const unitSystem = getUnitSystem(options, originResponse);
+
     const googleRoutes: google.maps.DirectionsRoute[] = [];
     response.Routes.forEach((route) => {
       let bounds = new MigrationLatLngBounds();
@@ -216,10 +219,16 @@ export class MigrationDirectionsService {
 
           googleSteps.push({
             distance: {
-              // we do not support Google's behavior of using the unit system of the country of origin and so we will use
-              // Amazon Location's default unit system of kilometers if the unit system option is not specified
-              text: convertKilometersToGoogleDistanceText(step.Distance, options),
-              value: step.Distance * KILOMETERS_TO_METERS_CONSTANT, // in meters, multiply km by 1000
+              /*
+               * Google's Distance.text is based on unit system,
+               * whereas Amazon Location's Distance is always in meters,
+               * therefore needs to be translated to metric or imperial.
+               *
+               * Google's Distance.value is always in meters, so is Amazon Locations.
+               * therefore no translation is needed.
+               */
+              text: formatDistanceBasedOnUnitSystem(step.Distance, { ...options, unitSystem }),
+              value: step.Distance,
             },
             duration: {
               text: formatSecondsAsGoogleDurationText(step.Duration),
@@ -247,10 +256,16 @@ export class MigrationDirectionsService {
         const legOverview = legDetails.Summary.Overview;
         googleLegs.push({
           distance: {
-            // we do not support Google's behavior of using the unit system of the country of origin and so we will use
-            // Amazon Location's default unit system of kilometers if the unit system option is not specified
-            text: convertKilometersToGoogleDistanceText(legOverview.Distance, options),
-            value: legOverview.Distance * KILOMETERS_TO_METERS_CONSTANT, // in meters, multiply km by 1000
+            /*
+             * Google's Distance.text is based on unit system,
+             * whereas Amazon Location's Distance is always in meters,
+             * therefore needs to be translated to metric or imperial.
+             *
+             * Google's Distance.value is always in meters, so is Amazon Locations.
+             * therefore no translation is needed.
+             */
+            text: formatDistanceBasedOnUnitSystem(legOverview.Distance, { ...options, unitSystem }),
+            value: legOverview.Distance,
           },
           duration: {
             text: formatSecondsAsGoogleDurationText(legOverview.Duration),

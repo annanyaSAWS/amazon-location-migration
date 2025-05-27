@@ -2055,6 +2055,8 @@ import {
   CalculateRouteMatrixCommand,
   CalculateRoutesRequest,
   RouteTravelMode,
+  CalculateRoutesResponse,
+  GeometryFormat,
 } from "@aws-sdk/client-geo-routes";
 
 const directionsService = new MigrationDirectionsService();
@@ -2073,6 +2075,7 @@ distanceMatrixService._placesService = new MigrationPlacesService();
 // the values we pass to our google migration classes get transformed
 // correctly and our called
 import { Marker } from "maplibre-gl";
+import * as directionHelpers from "../src/directions/helpers";
 
 const testLat = 30.268193; // Austin, TX :)
 const testLng = -97.7457518;
@@ -2847,7 +2850,7 @@ test("should return route with origin as LatLng and destination as LatLng", (don
 
   directionsService.route(request).then((response) => {
     // Since origin and destination are both specified as parseable values, the only mocked
-    // GeoPlacesClient call should be the CalculateRoutesCommand
+    // GeoRoutesClient call should be the CalculateRoutesCommand
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
 
@@ -2888,7 +2891,7 @@ test("should return route with origin as LatLng and destination as Place.locatio
 
   directionsService.route(request).then((response) => {
     // Since origin and destination are both specified as parseable values, the only mocked
-    // GeoPlacesClient call should be the CalculateRoutesCommand
+    // GeoRoutesClient call should be the CalculateRoutesCommand
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
 
@@ -3015,8 +3018,8 @@ test("should return route with origin as Place.placeId and destination as Place.
     const start_location = leg.start_location;
     const end_location = leg.end_location;
     expect(distance).toStrictEqual({
-      text: "4047 km",
-      value: 4047000,
+      text: "4.0 km",
+      value: 4047,
     });
     expect(steps.length).toStrictEqual(7);
     expect(duration).toStrictEqual({
@@ -3050,7 +3053,7 @@ test("should return route with origin as LatLng and destination as LatLng with c
   directionsService
     .route(request, (results, status) => {
       // Since origin and destination are both specified as parseable values, the only mocked
-      // GeoPlacesClient call should be the CalculateRoutesCommand
+      // GeoRoutesClient call should be the CalculateRoutesCommand
       expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
       expect(mockedRoutesClientSend).toHaveBeenCalledWith(expect.any(CalculateRoutesCommand));
 
@@ -3468,8 +3471,10 @@ test("should return getDistanceMatrix with origin as Place.placeId and destinati
   distanceMatrixService.getDistanceMatrix(request).then((response) => {
     // Since origin was a placeId and destination was a query input, these will trigger a
     // getDetails and findPlaceFromQuery request (respectively) to retrieve the location geometry,
-    // once these are processed, the response will have origin and destination positions which will need converting to human readable addresses via ReverseGeocodeCommand
-    // so there will be a total of 4 mocked GeoPlacesClient.send calls (2 for the places query, 2 for reverseGeocode) and  1 mocked GeoRoutesClient.send call for distance matrix
+    // once these are processed, the response will have origin and destination positions which will
+    // need converting to human readable addresses via ReverseGeocodeCommand.
+    // So, there will be a total of 4 mocked GeoPlacesClient.send calls (2 for the places query,
+    // 2 for reverseGeocode) and  1 mocked GeoRoutesClient.send call for distance matrix
     expect(mockedRoutesClientSend).toHaveBeenCalledTimes(1);
     expect(mockedPlacesClientSend).toHaveBeenCalledTimes(4);
     expect(mockedPlacesClientSend).toHaveBeenCalledWith(expect.any(SearchTextCommand));
@@ -3485,8 +3490,8 @@ test("should return getDistanceMatrix with origin as Place.placeId and destinati
 
     const element = row.elements[0];
     expect(element.distance).toStrictEqual({
-      text: "12 km",
-      value: 12000,
+      text: "12 m",
+      value: 12,
     });
     expect(element.duration).toStrictEqual({
       text: "1 min",
@@ -3770,8 +3775,8 @@ test("getDistanceMatrix will invoke the callback if specified", (done) => {
 
       const element = row.elements[0];
       expect(element.distance).toStrictEqual({
-        text: "12 km",
-        value: 12000,
+        text: "12 m",
+        value: 12,
       });
       expect(element.duration).toStrictEqual({
         text: "1 min",
@@ -3851,3 +3856,1739 @@ test("should call getDistanceMatrix with options avoidHighways set to true", (do
     done();
   });
 });
+
+describe("isPointInImperialCountry should work with distanceMatrixService and directionsService", () => {
+  describe("isPointInImperialCountry should work with distanceMatrixService", () => {
+    test("should return imperial distance, when distanceMatrix response is in USA", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat: -97.7289, lng: 30.2784 }],
+        destinations: [{ lat: -97.7281, lng: 30.2849 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 1931, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [30.2784, -97.7289],
+          locationLatLng: {
+            lat: () => -97.7289,
+            lng: () => 30.2784,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [30.2849, -97.7281],
+          locationLatLng: {
+            lat: () => -97.7281,
+            lng: () => 30.2849,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("1.2 mi");
+          expect(response.rows[0].elements[0].distance.value).toBe(1931);
+          done();
+        });
+    });
+
+    test("should return imperial, when distanceMatrix response is in Myanmar", (done) => {
+        const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat: 97.11259, lng: 19.647565 }],
+        destinations: [{ lat:97.11542, lng: 97.11542 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 482, DurationSeconds: 120 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [19.647565, 97.11259],
+          locationLatLng: {
+            lat: () => 97.11259,
+            lng: () => 19.647565,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [19.65123, 97.11542],
+          locationLatLng: {
+            lat: () => 19.65123,
+            lng: () => 30.2849,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("0.3 mi");
+          expect(response.rows[0].elements[0].distance.value).toBe(482);
+          done();
+        });
+    });
+
+    test("should return imperial, when distanceMatrix response is in Liberia", (done) => {
+        const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:-10.8038, lng: 6.3162 }],
+        destinations: [{ lat:-10.8039, lng: 6.3081 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 1126, DurationSeconds: 240 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [6.3162, -10.8038],
+          locationLatLng: {
+            lat: () => -10.8038,
+            lng: () => 6.3162,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [6.3081, -10.8039],
+          locationLatLng: {
+            lat: () => 6.3081,
+            lng: () => -10.8039,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("0.7 mi");
+          expect(response.rows[0].elements[0].distance.value).toBe(1126);
+          done();
+        });
+    });
+
+    test("should return metric, when distanceMatrix response is not in USA, Myanmar, Liberia", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:77.22941, lng: 28.60227 }],
+        destinations: [{ lat:77.22382, lng: 28.60386 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 2100, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [28.60227, 77.22941],
+          locationLatLng: {
+            lat: () => 77.22941,
+            lng: () => 28.60227,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [28.60386, 77.22382],
+          locationLatLng: {
+            lat: () => 77.22382,
+            lng: () => 28.60386,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("2.1 km");
+          expect(response.rows[0].elements[0].distance.value).toBe(2100);
+          done();
+        });
+    });
+
+    test("should return metric, when distanceMatrix response is not in USA, Myanmar, Liberia", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:77.22941, lng: 28.60227 }],
+        destinations: [{ lat:77.22382, lng: 28.60386 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 2100, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [28.60227, 77.22941],
+          locationLatLng: {
+            lat: () => 77.22941,
+            lng: () => 28.60227,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [28.60386, 77.22382],
+          locationLatLng: {
+            lat: () => 77.22382,
+            lng: () => 28.60386,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("2.1 km");
+          expect(response.rows[0].elements[0].distance.value).toBe(2100);
+          done();
+        });
+    });
+
+    test("should return metric when extractCoordinate is null", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:77.22941, lng: 28.60227 }],
+        destinations: [{ lat:77.22382, lng: 28.60386 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 2100, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [28.60227, 77.22941],
+          locationLatLng: {
+            lat: () => null,
+            lng: () => null,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [28.60386, 77.22382],
+          locationLatLng: {
+            lat: () => 77.22382,
+            lng: () => 28.60386,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("2.1 km");
+          expect(response.rows[0].elements[0].distance.value).toBe(2100);
+          done();
+        });
+    });
+  });
+
+  describe("isPointInImperialCountry should work with directionsService", () => {
+    test("should return imperial distance, when directions response is in USA", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 30.2784, lng: -97.7289 },
+        destination: { lat: 30.2849, lng: -97.7281 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [-97.73835, 30.31332],
+                      Position: [-97.7385452, 30.3134151],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [-97.7335401, 30.2870299],
+                      Position: [-97.7335401, 30.2870699],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [-97.7289, 30.2784],
+                    [-97.7281, 30.2849],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [30.2784, -97.7289],
+        locationLatLng: {
+          lat: () => -97.7289,
+          lng: () => 30.2784,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [30.2849, -97.7281],
+        locationLatLng: {
+          lat: () => -97.7281,
+          lng: () => 30.2849,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("2.5 mi");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("0.3 mi");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return imperial, when directions response is in Myanmar", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 97.11259, lng: 19.647565 },
+        destination: { lat: 97.11542, lng: 19.65123 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [97.11259, 19.647565],
+                      Position: [97.11259, 19.647565],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [97.11542, 19.65123],
+                      Position: [97.11542, 19.65123],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [97.11542, 19.647565],
+                    [97.11542, 19.65123],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [19.647565, 97.11259],
+        locationLatLng: {
+          lat: () => 97.11259,
+          lng: () => 19.647565,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [19.65123, 97.11542],
+        locationLatLng: {
+          lat: () => 19.65123,
+          lng: () => 30.2849,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("2.5 mi");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("0.3 mi");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return imperial, when directions response is in Liberia", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: -10.8038, lng: 6.3162 },
+        destination: { lat: -10.8039, lng: 6.3081 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [-10.8038, 6.3162],
+                      Position: [-10.8038, 6.3162],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [-10.8039, 6.3081],
+                      Position: [-10.8039, 6.3081],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [-10.8038, 6.3162],
+                    [-10.8039, 6.3081],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [6.3162, -10.8038],
+        locationLatLng: {
+          lat: () => -10.8038,
+          lng: () => 6.3162,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [6.3081, -10.8039],
+        locationLatLng: {
+          lat: () => 6.3081,
+          lng: () => -10.8039,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("2.5 mi");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("0.3 mi");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return metric, when directions response is not in USA, Myanmar, Liberia", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 77.22941, lng: 28.60227 },
+        destination: { lat: 77.22382, lng: 28.60386 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [77.22941, 28.60227],
+                      Position: [77.22941, 28.60227],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [77.22382, 28.60386],
+                      Position: [77.22382, 28.60386],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [77.22941, 28.60227],
+                    [77.22382, 28.60386],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [28.60227, 77.22941],
+        locationLatLng: {
+          lat: () => 77.22941,
+          lng: () => 28.60227,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [28.60386, 77.22382],
+        locationLatLng: {
+          lat: () => 77.22382,
+          lng: () => 28.60386,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("4.0 km");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("403 m");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return metric when extractCoordinate is null", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 77.22941, lng: 28.60227 },
+        destination: { lat: 77.22382, lng: 28.60386 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [77.22941, 28.60227],
+                      Position: [77.22941, 28.60227],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [77.22382, 28.60386],
+                      Position: [77.22382, 28.60386],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [77.22941, 28.60227],
+                    [77.22382, 28.60386],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [],
+        locationLatLng: {
+          lat: () => null,
+          lng: () => null,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [28.60386, 77.22382],
+        locationLatLng: {
+          lat: () => 77.22382,
+          lng: () => 28.60386,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("4.0 km");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("403 m");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+  });
+});
+
+describe("isPointInImperialCountry should work with distanceMatrixService and directionsService", () => {
+  describe("isPointInImperialCountry should work with distanceMatrixService", () => {
+    test("should return imperial distance, when distanceMatrix response is in USA", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat: -97.7289, lng: 30.2784 }],
+        destinations: [{ lat: -97.7281, lng: 30.2849 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 1931, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [30.2784, -97.7289],
+          locationLatLng: {
+            lat: () => -97.7289,
+            lng: () => 30.2784,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [30.2849, -97.7281],
+          locationLatLng: {
+            lat: () => -97.7281,
+            lng: () => 30.2849,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("1.2 mi");
+          expect(response.rows[0].elements[0].distance.value).toBe(1931);
+          done();
+        });
+    });
+
+    test("should return imperial, when distanceMatrix response is in Myanmar", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat: 97.11259, lng: 19.647565 }],
+        destinations: [{ lat:97.11542, lng: 97.11542 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 482, DurationSeconds: 120 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [19.647565, 97.11259],
+          locationLatLng: {
+            lat: () => 97.11259,
+            lng: () => 19.647565,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [19.65123, 97.11542],
+          locationLatLng: {
+            lat: () => 19.65123,
+            lng: () => 30.2849,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("0.3 mi");
+          expect(response.rows[0].elements[0].distance.value).toBe(482);
+          done();
+        });
+    });
+
+    test("should return imperial, when distanceMatrix response is in Liberia", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:-10.8038, lng: 6.3162 }],
+        destinations: [{ lat:-10.8039, lng: 6.3081 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 1126, DurationSeconds: 240 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [6.3162, -10.8038],
+          locationLatLng: {
+            lat: () => -10.8038,
+            lng: () => 6.3162,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [6.3081, -10.8039],
+          locationLatLng: {
+            lat: () => 6.3081,
+            lng: () => -10.8039,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("0.7 mi");
+          expect(response.rows[0].elements[0].distance.value).toBe(1126);
+          done();
+        });
+    });
+
+    test("should return metric, when distanceMatrix response is not in USA, Myanmar, Liberia", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:77.22941, lng: 28.60227 }],
+        destinations: [{ lat:77.22382, lng: 28.60386 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 2100, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [28.60227, 77.22941],
+          locationLatLng: {
+            lat: () => 77.22941,
+            lng: () => 28.60227,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [28.60386, 77.22382],
+          locationLatLng: {
+            lat: () => 77.22382,
+            lng: () => 28.60386,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("2.1 km");
+          expect(response.rows[0].elements[0].distance.value).toBe(2100);
+          done();
+        });
+    });
+
+    test("should return metric, when distanceMatrix response is not in USA, Myanmar, Liberia", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:77.22941, lng: 28.60227 }],
+        destinations: [{ lat:77.22382, lng: 28.60386 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 2100, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [28.60227, 77.22941],
+          locationLatLng: {
+            lat: () => 77.22941,
+            lng: () => 28.60227,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [28.60386, 77.22382],
+          locationLatLng: {
+            lat: () => 77.22382,
+            lng: () => 28.60386,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("2.1 km");
+          expect(response.rows[0].elements[0].distance.value).toBe(2100);
+          done();
+        });
+    });
+
+    test("should return metric when extractCoordinate is null", (done) => {
+      const request : google.maps.DistanceMatrixRequest = {
+        origins: [{ lat:77.22941, lng: 28.60227 }],
+        destinations: [{ lat:77.22382, lng: 28.60386 }],
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockMatrixResponse = {
+        RouteMatrix: [[{ Distance: 2100, DurationSeconds: 300 }]],
+      };
+
+      const mockOriginsResponse = [
+        {
+          position: [28.60227, 77.22941],
+          locationLatLng: {
+            lat: () => null,
+            lng: () => null,
+          },
+        },
+      ];
+
+      const mockDestinationsResponse = [
+        {
+          position: [28.60386, 77.22382],
+          locationLatLng: {
+            lat: () => 77.22382,
+            lng: () => 28.60386,
+          },
+        },
+      ];
+
+      distanceMatrixService
+        ._convertAmazonResponseToGoogleResponse(
+          mockMatrixResponse,
+          mockOriginsResponse,
+          mockDestinationsResponse,
+          request,
+        )
+        .then((response) => {
+          expect(response.rows[0].elements[0].distance.text).toContain("2.1 km");
+          expect(response.rows[0].elements[0].distance.value).toBe(2100);
+          done();
+        });
+    });
+  });
+
+  describe("isPointInImperialCountry should work with directionsService", () => {
+    test("should return metric distance, when DirectionsRequest response is invalid", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 30.2784, lng: -97.7289 },
+        destination: { lat: 30.2849, lng: -97.7281 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [-97.73835, 30.31332],
+                      Position: [-97.7385452, 30.3134151],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [-97.7335401, 30.2870299],
+                      Position: [-97.7335401, 30.2870699],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [-97.7289, 30.2784],
+                    [-97.7281, 30.2849],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [30.2784, -97.7289],
+        locationLatLng: {
+          lat: () => -97.7289,
+          lng: () => 30.2784,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [30.2849, -97.7281],
+        locationLatLng: {
+          lat: () => -97.7281,
+          lng: () => 30.2849,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("2.5 mi");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("0.3 mi");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return imperial, when directions response is in Myanmar", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 97.11259, lng: 19.647565 },
+        destination: { lat: 97.11542, lng: 19.65123 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [97.11259, 19.647565],
+                      Position: [97.11259, 19.647565],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [97.11542, 19.65123],
+                      Position: [97.11542, 19.65123],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [97.11542, 19.647565],
+                    [97.11542, 19.65123],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [19.647565, 97.11259],
+        locationLatLng: {
+          lat: () => 97.11259,
+          lng: () => 19.647565,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [19.65123, 97.11542],
+        locationLatLng: {
+          lat: () => 19.65123,
+          lng: () => 30.2849,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("2.5 mi");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("0.3 mi");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return imperial, when directions response is in Liberia", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: -10.8038, lng: 6.3162 },
+        destination: { lat: -10.8039, lng: 6.3081 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [-10.8038, 6.3162],
+                      Position: [-10.8038, 6.3162],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [-10.8039, 6.3081],
+                      Position: [-10.8039, 6.3081],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [-10.8038, 6.3162],
+                    [-10.8039, 6.3081],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [6.3162, -10.8038],
+        locationLatLng: {
+          lat: () => -10.8038,
+          lng: () => 6.3162,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [6.3081, -10.8039],
+        locationLatLng: {
+          lat: () => 6.3081,
+          lng: () => -10.8039,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("2.5 mi");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("0.3 mi");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return metric, when directions response is not in USA, Myanmar, Liberia", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 77.22941, lng: 28.60227 },
+        destination: { lat: 77.22382, lng: 28.60386 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [77.22941, 28.60227],
+                      Position: [77.22941, 28.60227],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [77.22382, 28.60386],
+                      Position: [77.22382, 28.60386],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [77.22941, 28.60227],
+                    [77.22382, 28.60386],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [28.60227, 77.22941],
+        locationLatLng: {
+          lat: () => 77.22941,
+          lng: () => 28.60227,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [28.60386, 77.22382],
+        locationLatLng: {
+          lat: () => 77.22382,
+          lng: () => 28.60386,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("4.0 km");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("403 m");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+    test("should return metric when extractCoordinate is null", (done) => {
+      const request: google.maps.DirectionsRequest = {
+        origin: { lat: 77.22941, lng: 28.60227 },
+        destination: { lat: 77.22382, lng: 28.60386 },
+        travelMode: TravelMode.DRIVING,
+      };
+
+      const mockRouteResponse: CalculateRoutesResponse = {
+        LegGeometryFormat: GeometryFormat.SIMPLE,
+        Notices: [],
+        PricingBucket: "DummyBucket",
+        Routes: [
+          {
+            Legs: [
+              {
+                VehicleLegDetails: {
+                  Arrival: {
+                    Place: {
+                      OriginalPosition: [77.22941, 28.60227],
+                      Position: [77.22941, 28.60227],
+                    },
+                  },
+                  Departure: {
+                    Place: {
+                      OriginalPosition: [77.22382, 28.60386],
+                      Position: [77.22382, 28.60386],
+                    },
+                  },
+                  Incidents: [],
+                  Notices: [],
+                  PassThroughWaypoints: [],
+                  Spans: [],
+                  Summary: {
+                    Overview: {
+                      BestCaseDuration: 423,
+                      Distance: 4047,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                    TravelOnly: {
+                      BestCaseDuration: 423,
+                      Duration: 423,
+                      TypicalDuration: 423,
+                    },
+                  },
+                  TollSystems: [],
+                  Tolls: [],
+                  TravelSteps: [
+                    {
+                      Distance: 403,
+                      Duration: 74,
+                      ExitNumber: [],
+                      GeometryOffset: 0,
+                      Instruction: "Head north on San Jacinto Blvd. Go for 403 m.",
+                      Type: "Depart",
+                    },
+                  ],
+                  TruckRoadTypes: [],
+                  Zones: [],
+                },
+                Geometry: {
+                  LineString: [
+                    [77.22941, 28.60227],
+                    [77.22382, 28.60386],
+                  ],
+                },
+                Language: "en-us",
+                TravelMode: "Car",
+                Type: "Vehicle",
+              },
+            ],
+            MajorRoadLabels: [
+              {
+                RoadName: {
+                  Language: "en",
+                  Value: "Guadalupe St",
+                },
+              },
+            ],
+            Summary: {
+              Distance: 1931,
+              Duration: 240,
+            },
+          },
+        ],
+      };
+
+      const mockOriginResponse = {
+        position: [],
+        locationLatLng: {
+          lat: () => null,
+          lng: () => null,
+        },
+      };
+
+      const mockDestinationResponse = {
+        position: [28.60386, 77.22382],
+        locationLatLng: {
+          lat: () => 77.22382,
+          lng: () => 28.60386,
+        },
+      };
+
+      const response = directionsService._convertAmazonResponseToGoogleResponse(
+        mockRouteResponse,
+        request,
+        mockOriginResponse,
+        mockDestinationResponse,
+      );
+
+      expect(response.routes[0].legs[0].distance.text).toContain("4.0 km");
+      expect(response.routes[0].legs[0].distance.value).toBe(4047);
+
+      expect(response.routes[0].legs[0].steps[0].distance.text).toContain("403 m");
+      expect(response.routes[0].legs[0].steps[0].distance.value).toBe(403);
+      done();
+    });
+
+  });
+});
+
+
