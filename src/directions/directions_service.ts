@@ -23,7 +23,7 @@ import {
   parseOrFindLocations,
   ParseOrFindLocationResponse,
   populateAvoidOptions,
-  getUnitSystemFromLatLong,
+  getUnitSystem,
 } from "./helpers";
 
 // place_id and types needed for geocoded_waypoints response property, formatted_address needed for leg start_address and end_address
@@ -192,17 +192,7 @@ export class MigrationDirectionsService {
     destinationResponse,
     waypointResponses?,
   ) {
-    // Determine unit system if not specified in options
-    let unitSystem = options.unitSystem;
-    if (!("unitSystem" in options) && originResponse.locationLatLng) {
-      getUnitSystemFromLatLong(
-        this._placesService._client,
-        [originResponse.locationLatLng.lat(), originResponse.locationLatLng.lng()],
-        (determinedUnitSystem) => {
-          unitSystem = determinedUnitSystem;
-        },
-      );
-    }
+    const unitSystem = getUnitSystem(options, originResponse);
 
     const googleRoutes: google.maps.DirectionsRoute[] = [];
     response.Routes.forEach((route) => {
@@ -229,7 +219,7 @@ export class MigrationDirectionsService {
           googleSteps.push({
             distance: {
               text: formatDistanceBasedOnUnitSystem(step.Distance, { ...options, unitSystem }),
-              value: step.Distance, // value always in meters, Distance is also always in meters
+              value: step.Distance,
             },
             duration: {
               text: formatSecondsAsGoogleDurationText(step.Duration),
@@ -257,8 +247,8 @@ export class MigrationDirectionsService {
         const legOverview = legDetails.Summary.Overview;
         googleLegs.push({
           distance: {
-            text: formatDistanceBasedOnUnitSystem(legOverview.Distance, options),
-            value: legOverview.Distance, // Both legOverview.Distance and distance.value should be in meters
+            text: formatDistanceBasedOnUnitSystem(legOverview.Distance, { ...options, unitSystem }),
+            value: legOverview.Distance,
           },
           duration: {
             text: formatSecondsAsGoogleDurationText(legOverview.Duration),

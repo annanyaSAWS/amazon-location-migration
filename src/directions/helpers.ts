@@ -1,10 +1,16 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { LatLngToLngLat, MigrationLatLng, PlacesServiceStatus } from "../common";
+import { MigrationLatLng, PlacesServiceStatus } from "../common";
 import { MigrationPlacesService } from "../places";
-
+import * as turf from "@turf/turf";
 import { UnitSystem } from "./defines";
+import { usaGeoJson } from "./country_geojson/usa";
+import { myanmarGeoJson } from "./country_geojson/myanmar";
+import { liberiaGeoJson } from "./country_geojson/liberia";
+
+type TurfPolygon = ReturnType<typeof turf.polygon>;
+
 import { CalculateRouteMatrixRequest, CalculateRoutesRequest } from "@aws-sdk/client-geo-routes";
 import { GeoPlacesClient, ReverseGeocodeCommand, ReverseGeocodeRequest } from "@aws-sdk/client-geo-places";
 
@@ -199,42 +205,146 @@ export function getReverseGeocodedAddresses(
 }
 
 /**
+ * Creates Turf.js polygons from GeoJSON feature collection, handling both Polygon and MultiPolygon
+ *
+ * @param geojson - GeoJSON FeatureCollection containing country boundaries
+ * @returns Array of Turf.js polygon features
+ */
+//keep any for now, will typecast to geojson later
+export function createPolygons(geojson: any): TurfPolygon[] {
+  if (!geojson?.features) return [];
+
+  //keep any for now, will typecast to geojson.feature later
+  return geojson.features.reduce((polygons: TurfPolygon[], feature: any) => {
+    try {
+      if (feature.geometry.type === "Polygon") {
+        polygons.push(turf.polygon(feature.geometry.coordinates));
+      } else if (feature.geometry.type === "MultiPolygon") {
+        // For MultiPolygon, each coordinate array represents a separate polygon
+        feature.geometry.coordinates.forEach((polygonCoords: number[][][]) => {
+          polygons.push(turf.polygon(polygonCoords));
+        });
+      }
+    } catch (error) {
+      console.error("Error creating polygon:", error);
+    }
+    return polygons;
+  }, []);
+}
+
+// Initialize country polygons once
+const usaPolygons = createPolygons(usaGeoJson);
+const myanmarPolygons = createPolygons(myanmarGeoJson);
+const liberiaPolygons = createPolygons(liberiaGeoJson);
+
+/**
+ * Determines if a point is within any polygon in the given array
+ *
+ * @param point - Turf.js point feature
+ * @param polygons - Array of Turf.js polygon features
+ * @returns Boolean indicating if point is within any polygon
+ */
+export function isPointInPolygons(point: number[], polygons: TurfPolygon[]): boolean {
+  if (!point || polygons.length === 0) return false;
+  // Check all polygons for point to be in any of them
+  return polygons.some((polygon) => polygon && turf.booleanPointInPolygon(point, polygon));
+}
+
+/**
  * Determines the appropriate unit system based on the country of the provided coordinates. Returns UnitSystem.IMPERIAL
  * for addresses in US, Liberia, and Myanmar, and UnitSystem.METRIC for all other countries.
  *
- * @param client - GeoPlacesClient instance for reverse geocoding
- * @param position - Array of [latitude, longitude] coordinates
- * @param callback - Function to be called with the determined UnitSystem
+ * @param options - Object containing unitSystem preference
+ * @param response - OriginsResponse or OriginResponse containing location information
+ * @returns UnitSystem.IMPERIAL if location is in USA, Myanmar, or Liberia; UnitSystem.METRIC otherwise
  */
-export function getUnitSystemFromLatLong(
-  client: GeoPlacesClient,
-  position: number[],
-  callback: (unitSystem: UnitSystem) => void,
-) {
-  const lngLat = LatLngToLngLat(position);
+// keep any for now, need to fix _convertAmazonResponseToGoogleResponse types first
+export function getUnitSystem(options: any, response: any): UnitSystem {
+  if (options?.unitSystem !== undefined) {
+    return options.unitSystem;
+  }
 
-  const request: ReverseGeocodeRequest = {
-    QueryPosition: lngLat,
-    AdditionalFeatures: ["TimeZone"],
-  };
-  const command = new ReverseGeocodeCommand(request);
+  const coordinates = extractCoordinates(options, response);
+  if (!coordinates) {
+    return UnitSystem.METRIC;
+  }
 
-  client
-    .send(command)
-    .then((response) => {
-      const address = response?.ResultItems?.[0]?.Address;
-      const countryCode = address?.Country?.Code3 || "";
+  const flag = isPointInImperialCountry(coordinates);
+  return flag ? UnitSystem.IMPERIAL : UnitSystem.METRIC;
+}
 
-      // Check if the country uses imperial system
-      const imperialCountries = ["USA", "MMR", "LBR"]; // US, Myanmar, Liberia
-      const unitSystem = imperialCountries.includes(countryCode) ? UnitSystem.IMPERIAL : UnitSystem.METRIC;
+/**
+ * Determines if a point is within any of the imperial unit system countries
+ *
+ * @param coordinates - [longitude, latitude] array
+ * @returns Boolean indicating if point is within an imperial unit system country
+ */
+export function isPointInImperialCountry(coordinates: number[]): boolean {
+  return (
+    isPointInPolygons(coordinates, usaPolygons) ||
+    isPointInPolygons(coordinates, myanmarPolygons) ||
+    isPointInPolygons(coordinates, liberiaPolygons)
+  );
+}
 
-      callback(unitSystem);
-    })
-    .catch(() => {
-      // Default to metric in case of error
-      callback(UnitSystem.METRIC);
-    });
+/**
+ * Extracts coordinates from response object
+ *
+ * @param request Google.maps.DirectionsRequest or google.maps.DistanceMatrixRequest while making route or
+ *   getDistanceMatrix call
+ * @param response - OriginReponse or OriginsResponse containing location information
+ * @returns {undefined} Longitude, latitude array or null if coordinates cannot be extracted
+ */
+// keep any for now, need to fix _convertAmazonResponseToGoogleResponse types first
+export function extractCoordinates(
+  request: google.maps.DirectionsRequest | google.maps.DistanceMatrixRequest,
+  response: any,
+): number[] | null {
+  if (isDirectionsRequest(request)) {
+    return extractDirectionsOrigin(response);
+  }
+
+  return extractDistanceMatrixOrigin(response);
+}
+
+/**
+ * Checks if the given request is a DirectionsRequest.
+ *
+ * This type guard function determines if the input object has both 'origin' and 'destination' properties, which are
+ * characteristic of a Google Maps DirectionsRequest.
+ *
+ * @param request - The object to be checked
+ * @returns True if the request is a DirectionsRequest, false otherwise
+ */
+// keep any for now, need to fix _convertAmazonResponseToGoogleResponse types first
+function isDirectionsRequest(request: any): request is google.maps.DirectionsRequest {
+  return "origin" in request && "destination" in request;
+}
+
+/**
+ * Extracts coordinates from OriginResponse response
+ *
+ * @param response - OriginResponse containing location information
+ * @returns {undefined} Longitude, latitude array or null if coordinates cannot be extracted
+ */
+function extractDirectionsOrigin(response): number[] | null {
+  const lat = response?.locationLatLng?.lat?.();
+  const lng = response?.locationLatLng?.lng?.();
+
+  return typeof lat === "number" && typeof lng === "number" ? [lat, lng] : null;
+}
+
+/**
+ * Extracts coordinates from OriginsResponse response
+ *
+ * @param response - OriginsResponse containing location information
+ * @returns {undefined} Longitude, latitude array or null if coordinates cannot be extracted
+ */
+function extractDistanceMatrixOrigin(response): number[] | null {
+  const lat = response?.[0]?.locationLatLng?.lat?.();
+  const lng = response?.[0]?.locationLatLng?.lng?.();
+
+  return typeof lat === "number" && typeof lng === "number" ? [lat, lng] : null;
 }
 
 /**

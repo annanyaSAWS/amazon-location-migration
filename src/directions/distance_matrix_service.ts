@@ -19,7 +19,7 @@ import {
   parseOrFindLocations,
   populateAvoidOptions,
   getReverseGeocodedAddresses,
-  getUnitSystemFromLatLong,
+  getUnitSystem,
 } from "./helpers";
 
 import { createBoundsFromPositions } from "../common";
@@ -137,17 +137,8 @@ export class MigrationDistanceMatrixService {
     request,
   ): Promise<google.maps.DistanceMatrixResponse> {
     return new Promise((resolve) => {
-      // Determine unit system if not specified in options
-      let unitSystem = request.unitSystem;
-      if (!("unitSystem" in request) && originsResponse.locationLatLng) {
-        getUnitSystemFromLatLong(
-          this._placesService._client,
-          [originsResponse.locationLatLng.lat(), originsResponse.locationLatLng.lng()],
-          (determinedUnitSystem) => {
-            unitSystem = determinedUnitSystem;
-          },
-        );
-      }
+      const unitSystem = getUnitSystem(request, originsResponse);
+
       const distanceMatrixResponseRows = calculateRouteMatrixResponse.RouteMatrix.map((row) => ({
         elements: row.map((cell) => ({
           distance: {

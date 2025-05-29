@@ -4,11 +4,18 @@
 import { createBoundsFromPositions } from "../src/common";
 import { LngLat } from "maplibre-gl";
 import {
+  createPolygons,
+  extractCoordinates,
   formatDistanceBasedOnUnitSystem,
-  getUnitSystemFromLatLong,
+  getUnitSystem,
+  isPointInPolygons,
   largeNumberFormatter,
   numberFormatter,
 } from "../src/directions/helpers";
+import { TravelMode } from "../src/directions";
+import * as turf from "@turf/turf";
+import * as directionHelpers from "../src/directions/helpers";
+
 import { UnitSystem } from "../src/directions";
 import { GeoPlacesClient, ReverseGeocodeCommand } from "@aws-sdk/client-geo-places";
 import { getReverseGeocodedAddresses } from "../src/directions/helpers";
@@ -39,6 +46,7 @@ jest.mock("@aws-sdk/client-geo-places", () => ({
     };
   }),
 }));
+jest.mock("@turf/turf");
 
 const geoPlacesClient = new GeoPlacesClient();
 const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
@@ -372,251 +380,150 @@ describe("getReverseGeocodedAddresses", () => {
   });
 });
 
-describe("getUnitSystemFromLatLong", () => {
-  const mockSend = jest.fn();
-  const mockClient = {
-    send: mockSend,
-  } as unknown as GeoPlacesClient;
-
+describe("createPolygons", () => {
   beforeEach(() => {
-    mockSend.mockClear();
-    jest.spyOn(console, "error").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
     jest.clearAllMocks();
+    // Restore normal turf.polygon implementation by default
+    (turf.polygon as jest.Mock).mockImplementation((coords) => ({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: coords },
+    }));
   });
 
-  test("should return IMPERIAL for US coordinates", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [
-          {
-            Address: {
-              Country: {
-                Code3: "USA",
-              },
+  test("should handle turf.polygon throwing error for invalid polygon coordinates", () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    (turf.polygon as jest.Mock).mockImplementation(() => {
+      throw new Error("Invalid polygon coordinates");
+    });
+
+    const invalidGeoJson = {
+      features: [
+        {
+          geometry: {
+            type: "Polygon",
+            coordinates: [[]],
+          },
+        },
+      ],
+    };
+
+    const result = createPolygons(invalidGeoJson);
+
+    expect(result).toEqual([]); // Should return empty array
+    expect(consoleSpy).toHaveBeenCalledWith("Error creating polygon:", expect.any(Error));
+    consoleSpy.mockRestore();
+  });
+
+  test("should handle invalid feature geometry", () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const invalidGeoJson = {
+      features: [
+        {
+          geometry: null,
+        },
+      ],
+    };
+
+    const result = createPolygons(invalidGeoJson);
+
+    expect(result).toEqual([]);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  test("should handle mixed valid and invalid features", () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    // Mock turf.polygon to throw error for specific coordinates
+    (turf.polygon as jest.Mock).mockImplementation((coords) => {
+      if (coords[0].length < 3) {
+        throw new Error("Invalid polygon coordinates");
+      }
+      return {
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: coords },
+      };
+    });
+
+    const mixedGeoJson = {
+      features: [
+        {
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [-97.7289, 30.2784],
+                [-97.7282, 30.2745],
+                [-97.7224, 30.2755],
+                [-97.7289, 30.2784],
+              ],
+            ], // Valid
+          },
+        },
+        {
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[-97.7289, 30.2784]]], // Invalid
+          },
+        },
+      ],
+    };
+
+    const result = createPolygons(mixedGeoJson);
+
+    expect(result.length).toBe(1); // Only valid polygon should be included
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    consoleSpy.mockRestore();
+  });
+
+  test("should handle forEach throwing error in MultiPolygon", () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const invalidMultiPolygonGeoJson = {
+      features: [
+        {
+          geometry: {
+            type: "MultiPolygon",
+            coordinates: {
+              // Invalid format that will cause forEach to throw
+              forEach: null,
             },
           },
-        ],
-      }),
-    );
+        },
+      ],
+    };
 
-    getUnitSystemFromLatLong(mockClient, [37.7749, -122.4194], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.IMPERIAL);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
+    const result = createPolygons(invalidMultiPolygonGeoJson);
+
+    expect(result).toEqual([]);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
-  test("should return IMPERIAL for Myanmar coordinates", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [
-          {
-            Address: {
-              Country: {
-                Code3: "MMR",
-              },
-            },
-          },
-        ],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [16.8661, 96.1951], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.IMPERIAL);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
+  test("should handle undefined features array", () => {
+    const result = createPolygons({ features: undefined });
+    expect(result).toEqual([]);
   });
 
-  test("should return IMPERIAL for Liberia coordinates", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [
-          {
-            Address: {
-              Country: {
-                Code3: "LBR",
-              },
-            },
-          },
-        ],
-      }),
-    );
+  test("should handle null input", () => {
+    const result = createPolygons(null);
+    expect(result).toEqual([]);
+  });
+});
 
-    getUnitSystemFromLatLong(mockClient, [6.328, -10.7969], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.IMPERIAL);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
+describe("isPointInPolygons", () => {
+  test("should return false for null point", () => {
+    expect(isPointInPolygons(null, [])).toBeFalsy();
   });
 
-  test("should return METRIC for UK coordinates", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [
-          {
-            Address: {
-              Country: {
-                Code3: "GBR",
-              },
-            },
-          },
-        ],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [51.5074, -0.1278], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
+  test("should return false for empty polygons array", () => {
+    expect(isPointInPolygons([1, 1], [])).toBeFalsy();
   });
 
-  test("should return METRIC when country code is missing", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [
-          {
-            Address: {
-              Country: {},
-            },
-          },
-        ],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when address is missing", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [
-          {
-            Address: {},
-          },
-        ],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when Address in first ResultItem is null", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [{ Address: null }],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when Country in Address is null", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [{ Address: { Country: null } }],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when ResultItems is empty", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when ResultItems is undefined", (done) => {
-    mockSend.mockImplementation(() => Promise.resolve({}));
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when first ResultItem is null", (done) => {
-    mockSend.mockImplementation(() =>
-      Promise.resolve({
-        ResultItems: [null],
-      }),
-    );
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when Response is empty", (done) => {
-    mockSend.mockImplementation(() => Promise.resolve({}));
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when response is null", (done) => {
-    mockSend.mockImplementation(() => Promise.resolve(null));
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when response is undefined", (done) => {
-    mockSend.mockImplementation(() => Promise.resolve(undefined));
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
-  });
-
-  test("should return METRIC when reverse geocoding fails", (done) => {
-    mockSend.mockImplementation(() => Promise.reject(new Error("Geocoding failed")));
-
-    getUnitSystemFromLatLong(mockClient, [0, 0], (unitSystem) => {
-      expect(unitSystem).toBe(UnitSystem.METRIC);
-      expect(mockSend).toHaveBeenCalledWith(expect.any(ReverseGeocodeCommand));
-      done();
-    });
+  test("should return false for null polygon in array", () => {
+    expect(isPointInPolygons([1, 1], [null])).toBeFalsy();
   });
 });
 
@@ -689,5 +596,119 @@ describe("formatDistanceBasedOnUnitSystem", () => {
       // 1609344 meters = 1000.000621 miles
       expect(formatDistanceBasedOnUnitSystem(1609345, { unitSystem: UnitSystem.IMPERIAL })).toBe("1,000 mi");
     });
+  });
+});
+
+describe("extractCoordinates", () => {
+  test("should extract coordinates from DirectionsRequest response", () => {
+    const request: google.maps.DirectionsRequest = {
+      origin: { lat: 30.2784, lng: -97.7289 }, // Using LatLngLiteral
+      destination: { lat: 30.2849, lng: -97.7281 },
+      travelMode: TravelMode.DRIVING,
+    };
+
+    const mockOriginResponse = {
+      position: [-97.7289, 30.2784],
+      locationLatLng: {
+        lat: () => 30.2784,
+        lng: () => -97.7289,
+      },
+    };
+
+    const result = extractCoordinates(request, mockOriginResponse);
+    expect(result).toEqual([30.2784, -97.7289]);
+  });
+
+  test("should extract coordinates from DistanceMatrixRequest response", () => {
+    const request: google.maps.DistanceMatrixRequest = {
+      origins: [{ lat: 30.2784, lng: -97.7289 }], // Using array of LatLngLiteral
+      destinations: [{ lat: 30.2849, lng: -97.7281 }],
+      travelMode: TravelMode.DRIVING,
+    };
+
+    const mockOriginsResponse = [
+      {
+        position: [30.2784, -97.7289],
+        locationLatLng: {
+          lat: () => -97.7289,
+          lng: () => 30.2784,
+        },
+      },
+    ];
+
+    const result = extractCoordinates(request, mockOriginsResponse);
+    expect(result).toEqual([-97.7289, 30.2784]);
+  });
+
+  test("should return null when DirectionsRequest response is invalid", () => {
+    const request: google.maps.DirectionsRequest = {
+      origin: { lat: 30.2784, lng: -97.7289 },
+      destination: { lat: 30.2849, lng: -97.7281 },
+      travelMode: TravelMode.DRIVING,
+    };
+
+    const response = {
+      Routes: [],
+    };
+
+    const result = extractCoordinates(request, response);
+    expect(result).toBeNull();
+  });
+
+  test("should return null when DistanceMatrixRequest response is invalid", () => {
+    const request: google.maps.DistanceMatrixRequest = {
+      origins: [{ lat: 30.2784, lng: -97.7289 }],
+      destinations: [{ lat: 30.2849, lng: -97.7281 }],
+      travelMode: TravelMode.DRIVING,
+    };
+
+    const response = {
+      origins: [],
+    };
+
+    const result = extractCoordinates(request, response);
+    expect(result).toBeNull();
+  });
+
+  test("should return null when CalculateRouteResponse is null", () => {
+    const request: google.maps.DirectionsRequest = {
+      origin: { lat: 30.2784, lng: -97.7289 },
+      destination: { lat: 30.2849, lng: -97.7281 },
+      travelMode: TravelMode.DRIVING,
+    };
+
+    const result = extractCoordinates(request, null);
+    expect(result).toBeNull();
+  });
+
+  test("should return null when CalculateDistanceMatrixResponse is null", () => {
+    const request: google.maps.DistanceMatrixRequest = {
+      origins: [{ lat: 30.2784, lng: -97.7289 }],
+      destinations: [{ lat: 30.2849, lng: -97.7281 }],
+      travelMode: TravelMode.DRIVING,
+    };
+
+    const result = extractCoordinates(request, null);
+    expect(result).toBeNull();
+  });
+});
+
+describe("getUnitSystem", () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test("should return METRIC when options has no unitSystem and extractCoordinates returns null", () => {
+    const options = {
+      origin: { lat: 40.7128, lng: -74.006 },
+      destination: { lat: 34.0522, lng: -118.2437 },
+    };
+    const response = {};
+
+    jest.spyOn(directionHelpers, "extractCoordinates").mockImplementation(() => null);
+
+    const result = getUnitSystem(options, response);
+
+    expect(result).toBe(UnitSystem.METRIC);
   });
 });
