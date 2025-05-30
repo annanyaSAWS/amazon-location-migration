@@ -187,12 +187,12 @@ export class MigrationDirectionsService {
 
   _convertAmazonResponseToGoogleResponse(
     response: CalculateRoutesResponse,
-    options,
+    options: google.maps.DirectionsRequest,
     originResponse,
     destinationResponse,
     waypointResponses?,
   ) {
-    const unitSystem = getUnitSystem(options, originResponse);
+    const unitSystem = getUnitSystem(options, originResponse.position);
 
     const googleRoutes: google.maps.DirectionsRoute[] = [];
     response.Routes.forEach((route) => {
@@ -218,6 +218,14 @@ export class MigrationDirectionsService {
 
           googleSteps.push({
             distance: {
+              /*
+               * Google's Distance.text is based on unit system,
+               * whereas Amazon Location's Distance is always in meters,
+               * therefore needs to be translated to metric or imperial.
+               *
+               * Google's Distance.value is always in meters, so is Amazon Locations.
+               * therefore no translation is needed.
+               */
               text: formatDistanceBasedOnUnitSystem(step.Distance, { ...options, unitSystem }),
               value: step.Distance,
             },
@@ -247,6 +255,14 @@ export class MigrationDirectionsService {
         const legOverview = legDetails.Summary.Overview;
         googleLegs.push({
           distance: {
+            /*
+             * Google's Distance.text is based on unit system,
+             * whereas Amazon Location's Distance is always in meters,
+             * therefore needs to be translated to metric or imperial.
+             *
+             * Google's Distance.value is always in meters, so is Amazon Locations.
+             * therefore no translation is needed.
+             */
             text: formatDistanceBasedOnUnitSystem(legOverview.Distance, { ...options, unitSystem }),
             value: legOverview.Distance,
           },

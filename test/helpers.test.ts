@@ -5,8 +5,8 @@ import { createBoundsFromPositions } from "../src/common";
 import { LngLat } from "maplibre-gl";
 import {
   createPolygons,
-  extractCoordinates,
   formatDistanceBasedOnUnitSystem,
+  getReverseGeocodedAddresses,
   getUnitSystem,
   isPointInPolygons,
   largeNumberFormatter,
@@ -14,11 +14,10 @@ import {
 } from "../src/directions/helpers";
 import { TravelMode } from "../src/directions";
 import * as turf from "@turf/turf";
-import * as directionHelpers from "../src/directions/helpers";
-
-import { UnitSystem } from "../src/directions";
 import { GeoPlacesClient, ReverseGeocodeCommand } from "@aws-sdk/client-geo-places";
-import { getReverseGeocodedAddresses } from "../src/directions/helpers";
+import { UnitSystem } from "../src/directions";
+import { CountryGeoJSON } from "../src/directions/country_geojson/countryType";
+import { Position } from "geojson";
 
 const mockedPlacesClientSend = jest.fn((command) => {
   return new Promise((resolve, reject) => {
@@ -390,41 +389,49 @@ describe("createPolygons", () => {
     }));
   });
 
-  test("should handle turf.polygon throwing error for invalid polygon coordinates", () => {
-    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+  describe("createPolygons", () => {
+    test("should handle turf.polygon throwing error for invalid polygon coordinates", () => {
+      const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    (turf.polygon as jest.Mock).mockImplementation(() => {
-      throw new Error("Invalid polygon coordinates");
-    });
+      (turf.polygon as jest.Mock).mockImplementation(() => {
+        throw new Error("Invalid polygon coordinates");
+      });
 
-    const invalidGeoJson = {
-      features: [
-        {
-          geometry: {
-            type: "Polygon",
-            coordinates: [[]],
+      const invalidGeoJson: CountryGeoJSON = {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [[]] as [number, number][][],
+            },
           },
-        },
-      ],
-    };
+        ],
+      };
 
-    const result = createPolygons(invalidGeoJson);
+      const result = createPolygons(invalidGeoJson);
 
-    expect(result).toEqual([]); // Should return empty array
-    expect(consoleSpy).toHaveBeenCalledWith("Error creating polygon:", expect.any(Error));
-    consoleSpy.mockRestore();
+      expect(result).toEqual([]); // Should return empty array
+      expect(consoleSpy).toHaveBeenCalledWith("Error creating polygon:", expect.any(Error));
+      consoleSpy.mockRestore();
+    });
   });
 
   test("should handle invalid feature geometry", () => {
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     const invalidGeoJson = {
+      type: "FeatureCollection",
       features: [
         {
+          type: "Feature",
+          properties: {},
           geometry: null,
         },
       ],
-    };
+    } as CountryGeoJSON; // Type assertion needed because we're intentionally creating invalid data for testing
 
     const result = createPolygons(invalidGeoJson);
 
@@ -437,7 +444,7 @@ describe("createPolygons", () => {
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     // Mock turf.polygon to throw error for specific coordinates
-    (turf.polygon as jest.Mock).mockImplementation((coords) => {
+    (turf.polygon as jest.Mock).mockImplementation((coords: Position[][]) => {
       if (coords[0].length < 3) {
         throw new Error("Invalid polygon coordinates");
       }
@@ -447,9 +454,12 @@ describe("createPolygons", () => {
       };
     });
 
-    const mixedGeoJson = {
+    const mixedGeoJson: CountryGeoJSON = {
+      type: "FeatureCollection",
       features: [
         {
+          type: "Feature",
+          properties: {},
           geometry: {
             type: "Polygon",
             coordinates: [
@@ -459,13 +469,15 @@ describe("createPolygons", () => {
                 [-97.7224, 30.2755],
                 [-97.7289, 30.2784],
               ],
-            ], // Valid
+            ] as Position[][],
           },
         },
         {
+          type: "Feature",
+          properties: {},
           geometry: {
             type: "Polygon",
-            coordinates: [[[-97.7289, 30.2784]]], // Invalid
+            coordinates: [[[-97.7289, 30.2784]]] as Position[][],
           },
         },
       ],
@@ -482,18 +494,18 @@ describe("createPolygons", () => {
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     const invalidMultiPolygonGeoJson = {
+      type: "FeatureCollection",
       features: [
         {
+          type: "Feature",
+          properties: {},
           geometry: {
             type: "MultiPolygon",
-            coordinates: {
-              // Invalid format that will cause forEach to throw
-              forEach: null,
-            },
+            coordinates: null as unknown as Position[][][], // Intentionally invalid for testing
           },
         },
       ],
-    };
+    } as CountryGeoJSON;
 
     const result = createPolygons(invalidMultiPolygonGeoJson);
 
@@ -503,13 +515,56 @@ describe("createPolygons", () => {
   });
 
   test("should handle undefined features array", () => {
-    const result = createPolygons({ features: undefined });
+    const invalidGeoJson = {
+      type: "FeatureCollection",
+      features: undefined,
+    } as CountryGeoJSON;
+
+    const result = createPolygons(invalidGeoJson);
+    expect(result).toEqual([]);
+  });
+
+  test("should handle undefined features array (with explicit typing)", () => {
+    type InvalidGeoJSON = Omit<CountryGeoJSON, "features"> & {
+      features: undefined;
+    };
+
+    const invalidGeoJson: InvalidGeoJSON = {
+      type: "FeatureCollection",
+      features: undefined,
+    };
+
+    const result = createPolygons(invalidGeoJson as CountryGeoJSON);
     expect(result).toEqual([]);
   });
 
   test("should handle null input", () => {
     const result = createPolygons(null);
     expect(result).toEqual([]);
+  });
+
+  test("should handle forEach throwing error in MultiPolygon", () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const invalidMultiPolygonGeoJson: CountryGeoJSON = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "MultiPolygon",
+            coordinates: null,
+          },
+        },
+      ],
+    };
+
+    const result = createPolygons(invalidMultiPolygonGeoJson as CountryGeoJSON);
+
+    expect(result).toEqual([]);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });
 
@@ -599,113 +654,84 @@ describe("formatDistanceBasedOnUnitSystem", () => {
   });
 });
 
-describe("extractCoordinates", () => {
-  test("should extract coordinates from DirectionsRequest response", () => {
-    const request: google.maps.DirectionsRequest = {
-      origin: { lat: 30.2784, lng: -97.7289 }, // Using LatLngLiteral
-      destination: { lat: 30.2849, lng: -97.7281 },
-      travelMode: TravelMode.DRIVING,
-    };
-
-    const mockOriginResponse = {
-      position: [-97.7289, 30.2784],
-      locationLatLng: {
-        lat: () => 30.2784,
-        lng: () => -97.7289,
-      },
-    };
-
-    const result = extractCoordinates(request, mockOriginResponse);
-    expect(result).toEqual([30.2784, -97.7289]);
-  });
-
-  test("should extract coordinates from DistanceMatrixRequest response", () => {
-    const request: google.maps.DistanceMatrixRequest = {
-      origins: [{ lat: 30.2784, lng: -97.7289 }], // Using array of LatLngLiteral
-      destinations: [{ lat: 30.2849, lng: -97.7281 }],
-      travelMode: TravelMode.DRIVING,
-    };
-
-    const mockOriginsResponse = [
-      {
-        position: [30.2784, -97.7289],
-        locationLatLng: {
-          lat: () => -97.7289,
-          lng: () => 30.2784,
-        },
-      },
-    ];
-
-    const result = extractCoordinates(request, mockOriginsResponse);
-    expect(result).toEqual([-97.7289, 30.2784]);
-  });
-
-  test("should return null when DirectionsRequest response is invalid", () => {
-    const request: google.maps.DirectionsRequest = {
-      origin: { lat: 30.2784, lng: -97.7289 },
-      destination: { lat: 30.2849, lng: -97.7281 },
-      travelMode: TravelMode.DRIVING,
-    };
-
-    const response = {
-      Routes: [],
-    };
-
-    const result = extractCoordinates(request, response);
-    expect(result).toBeNull();
-  });
-
-  test("should return null when DistanceMatrixRequest response is invalid", () => {
-    const request: google.maps.DistanceMatrixRequest = {
-      origins: [{ lat: 30.2784, lng: -97.7289 }],
-      destinations: [{ lat: 30.2849, lng: -97.7281 }],
-      travelMode: TravelMode.DRIVING,
-    };
-
-    const response = {
-      origins: [],
-    };
-
-    const result = extractCoordinates(request, response);
-    expect(result).toBeNull();
-  });
-
-  test("should return null when CalculateRouteResponse is null", () => {
-    const request: google.maps.DirectionsRequest = {
-      origin: { lat: 30.2784, lng: -97.7289 },
-      destination: { lat: 30.2849, lng: -97.7281 },
-      travelMode: TravelMode.DRIVING,
-    };
-
-    const result = extractCoordinates(request, null);
-    expect(result).toBeNull();
-  });
-
-  test("should return null when CalculateDistanceMatrixResponse is null", () => {
-    const request: google.maps.DistanceMatrixRequest = {
-      origins: [{ lat: 30.2784, lng: -97.7289 }],
-      destinations: [{ lat: 30.2849, lng: -97.7281 }],
-      travelMode: TravelMode.DRIVING,
-    };
-
-    const result = extractCoordinates(request, null);
-    expect(result).toBeNull();
-  });
-});
-
 describe("getUnitSystem", () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  test("should return METRIC when options has no unitSystem and extractCoordinates returns null", () => {
-    const options = {
+  // Tests for null/undefined options
+  test("should return METRIC when options is null", () => {
+    const options = null;
+    const response = [40.7128, -74.006];
+
+    const result = getUnitSystem(options, response);
+    expect(result).toBe(UnitSystem.METRIC);
+  });
+
+  test("should return METRIC when options is undefined", () => {
+    const options = undefined;
+    const response = [40.7128, -74.006];
+
+    const result = getUnitSystem(options, response);
+    expect(result).toBe(UnitSystem.METRIC);
+  });
+
+  test("should return METRIC when options has no unitSystem and response returns null", () => {
+    const options: google.maps.DirectionsRequest = {
       origin: { lat: 40.7128, lng: -74.006 },
       destination: { lat: 34.0522, lng: -118.2437 },
+      travelMode: TravelMode.DRIVING,
     };
-    const response = {};
+    const response = null;
 
-    jest.spyOn(directionHelpers, "extractCoordinates").mockImplementation(() => null);
+    const result = getUnitSystem(options, response);
+
+    expect(result).toBe(UnitSystem.METRIC);
+  });
+
+  test("should return METRIC when options has no unitSystem and response is empthy", () => {
+    const options: google.maps.DirectionsRequest = {
+      origin: { lat: 40.7128, lng: -74.006 },
+      destination: { lat: 34.0522, lng: -118.2437 },
+      travelMode: TravelMode.DRIVING,
+    };
+    const response = [];
+
+    const result = getUnitSystem(options, response);
+
+    expect(result).toBe(UnitSystem.METRIC);
+  });
+
+  test("should return METRIC when options has no unitSystem and response is not of length 2", () => {
+    const options: google.maps.DirectionsRequest = {
+      origin: { lat: 40.7128, lng: -74.006 },
+      destination: { lat: 34.0522, lng: -118.2437 },
+      travelMode: TravelMode.DRIVING,
+    };
+    const response = [40.7128];
+
+    const result = getUnitSystem(options, response);
+
+    expect(result).toBe(UnitSystem.METRIC);
+  });
+
+  test("should return METRIC when options is null", () => {
+    const options: google.maps.DirectionsRequest = null;
+    const response = [40.7128, -74.006];
+
+    const result = getUnitSystem(options, response);
+
+    expect(result).toBe(UnitSystem.METRIC);
+  });
+
+  test("should return METRIC when options has no unitSystem and unitSystem is undefined", () => {
+    const options: google.maps.DirectionsRequest = {
+      origin: { lat: 40.7128, lng: -74.006 },
+      destination: { lat: 34.0522, lng: -118.2437 },
+      travelMode: TravelMode.DRIVING,
+      unitSystem: undefined,
+    };
+    const response = [40.7128];
 
     const result = getUnitSystem(options, response);
 

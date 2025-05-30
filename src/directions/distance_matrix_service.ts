@@ -20,6 +20,7 @@ import {
   populateAvoidOptions,
   getReverseGeocodedAddresses,
   getUnitSystem,
+  ParseOrFindLocationResponse,
 } from "./helpers";
 
 import { createBoundsFromPositions } from "../common";
@@ -37,7 +38,7 @@ export class MigrationDistanceMatrixService {
   getDistanceMatrix(request: google.maps.DistanceMatrixRequest, callback?) {
     return new Promise<google.maps.DistanceMatrixResponse>((resolve, reject) => {
       parseOrFindLocations(request.origins, this._placesService, DISTANCE_MATRIX_FIND_LOCATION_FIELDS)
-        .then((originsResponse) => {
+        .then((originsResponse: ParseOrFindLocationResponse[]) => {
           parseOrFindLocations(request.destinations, this._placesService, DISTANCE_MATRIX_FIND_LOCATION_FIELDS)
             .then((destinationsResponse) => {
               // Map origins and destinations
@@ -134,16 +135,24 @@ export class MigrationDistanceMatrixService {
     calculateRouteMatrixResponse,
     originsResponse,
     destinationsResponse,
-    request,
+    request: google.maps.DistanceMatrixRequest,
   ): Promise<google.maps.DistanceMatrixResponse> {
     return new Promise((resolve) => {
-      const unitSystem = getUnitSystem(request, originsResponse);
+      const unitSystem = getUnitSystem(request, originsResponse[0].position);
 
       const distanceMatrixResponseRows = calculateRouteMatrixResponse.RouteMatrix.map((row) => ({
         elements: row.map((cell) => ({
           distance: {
+            /*
+             * Google's Distance.text is based on unit system,
+             * whereas Amazon Location's Distance is always in meters,
+             * therefore needs to be translated to metric or imperial.
+             *
+             * Google's Distance.value is always in meters, so is Amazon Locations.
+             * therefore no translation is needed.
+             */
             text: formatDistanceBasedOnUnitSystem(cell.Distance, { ...request, unitSystem }),
-            value: cell.Distance, // value always in meters, Distance is also always in meters
+            value: cell.Distance,
           },
           duration: {
             text: formatSecondsAsGoogleDurationText(cell.DurationSeconds),

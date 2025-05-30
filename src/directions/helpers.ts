@@ -8,11 +8,12 @@ import { UnitSystem } from "./defines";
 import { usaGeoJson } from "./country_geojson/usa";
 import { myanmarGeoJson } from "./country_geojson/myanmar";
 import { liberiaGeoJson } from "./country_geojson/liberia";
-
+import { Position } from "geojson";
 type TurfPolygon = ReturnType<typeof turf.polygon>;
 
 import { CalculateRouteMatrixRequest, CalculateRoutesRequest } from "@aws-sdk/client-geo-routes";
 import { GeoPlacesClient, ReverseGeocodeCommand, ReverseGeocodeRequest } from "@aws-sdk/client-geo-places";
+import { CountryGeoJSON } from "./country_geojson/countryType";
 
 const KILOMETERS_TO_MILES_CONSTANT = 0.621371;
 const FEET_TO_MILES_CONSTANT = 5280; // 1 mile is 5,280 feet or 1.60934 kilometres
@@ -210,18 +211,16 @@ export function getReverseGeocodedAddresses(
  * @param geojson - GeoJSON FeatureCollection containing country boundaries
  * @returns Array of Turf.js polygon features
  */
-//keep any for now, will typecast to geojson later
-export function createPolygons(geojson: any): TurfPolygon[] {
+export function createPolygons(geojson: CountryGeoJSON): TurfPolygon[] {
   if (!geojson?.features) return [];
 
-  //keep any for now, will typecast to geojson.feature later
-  return geojson.features.reduce((polygons: TurfPolygon[], feature: any) => {
+  return geojson.features.reduce((polygons: TurfPolygon[], feature) => {
     try {
       if (feature.geometry.type === "Polygon") {
-        polygons.push(turf.polygon(feature.geometry.coordinates));
+        polygons.push(turf.polygon(feature.geometry.coordinates as Position[][]));
       } else if (feature.geometry.type === "MultiPolygon") {
-        // For MultiPolygon, each coordinate array represents a separate polygon
-        feature.geometry.coordinates.forEach((polygonCoords: number[][][]) => {
+        const multiCoords = feature.geometry.coordinates as Position[][][];
+        multiCoords.forEach((polygonCoords) => {
           polygons.push(turf.polygon(polygonCoords));
         });
       }
@@ -233,9 +232,9 @@ export function createPolygons(geojson: any): TurfPolygon[] {
 }
 
 // Initialize country polygons once
-const usaPolygons = createPolygons(usaGeoJson);
-const myanmarPolygons = createPolygons(myanmarGeoJson);
-const liberiaPolygons = createPolygons(liberiaGeoJson);
+const usaPolygons = createPolygons(usaGeoJson as CountryGeoJSON);
+const myanmarPolygons = createPolygons(myanmarGeoJson as CountryGeoJSON);
+const liberiaPolygons = createPolygons(liberiaGeoJson as CountryGeoJSON);
 
 /**
  * Determines if a point is within any polygon in the given array
@@ -255,20 +254,25 @@ export function isPointInPolygons(point: number[], polygons: TurfPolygon[]): boo
  * for addresses in US, Liberia, and Myanmar, and UnitSystem.METRIC for all other countries.
  *
  * @param options - Object containing unitSystem preference
- * @param response - OriginsResponse or OriginResponse containing location information
+ * @param originPoint - LatLong values as number[] containing location information
  * @returns UnitSystem.IMPERIAL if location is in USA, Myanmar, or Liberia; UnitSystem.METRIC otherwise
  */
-// keep any for now, need to fix _convertAmazonResponseToGoogleResponse types first
-export function getUnitSystem(options: any, response: any): UnitSystem {
+export function getUnitSystem(
+  options: google.maps.DirectionsRequest | google.maps.DistanceMatrixRequest,
+  originPoint: number[],
+): UnitSystem {
+  if (!options) {
+    return UnitSystem.METRIC;
+  }
+
   if (options?.unitSystem !== undefined) {
     return options.unitSystem;
   }
 
-  const coordinates = extractCoordinates(options, response);
-  if (!coordinates) {
+  if (!originPoint || originPoint.length != 2) {
     return UnitSystem.METRIC;
   }
-
+  const coordinates = [originPoint[1], originPoint[0]]; // flip from Google's LongLat to Amazon's LatLong
   const flag = isPointInImperialCountry(coordinates);
   return flag ? UnitSystem.IMPERIAL : UnitSystem.METRIC;
 }
@@ -285,66 +289,6 @@ export function isPointInImperialCountry(coordinates: number[]): boolean {
     isPointInPolygons(coordinates, myanmarPolygons) ||
     isPointInPolygons(coordinates, liberiaPolygons)
   );
-}
-
-/**
- * Extracts coordinates from response object
- *
- * @param request Google.maps.DirectionsRequest or google.maps.DistanceMatrixRequest while making route or
- *   getDistanceMatrix call
- * @param response - OriginReponse or OriginsResponse containing location information
- * @returns {undefined} Longitude, latitude array or null if coordinates cannot be extracted
- */
-// keep any for now, need to fix _convertAmazonResponseToGoogleResponse types first
-export function extractCoordinates(
-  request: google.maps.DirectionsRequest | google.maps.DistanceMatrixRequest,
-  response: any,
-): number[] | null {
-  if (isDirectionsRequest(request)) {
-    return extractDirectionsOrigin(response);
-  }
-
-  return extractDistanceMatrixOrigin(response);
-}
-
-/**
- * Checks if the given request is a DirectionsRequest.
- *
- * This type guard function determines if the input object has both 'origin' and 'destination' properties, which are
- * characteristic of a Google Maps DirectionsRequest.
- *
- * @param request - The object to be checked
- * @returns True if the request is a DirectionsRequest, false otherwise
- */
-// keep any for now, need to fix _convertAmazonResponseToGoogleResponse types first
-function isDirectionsRequest(request: any): request is google.maps.DirectionsRequest {
-  return "origin" in request && "destination" in request;
-}
-
-/**
- * Extracts coordinates from OriginResponse response
- *
- * @param response - OriginResponse containing location information
- * @returns {undefined} Longitude, latitude array or null if coordinates cannot be extracted
- */
-function extractDirectionsOrigin(response): number[] | null {
-  const lat = response?.locationLatLng?.lat?.();
-  const lng = response?.locationLatLng?.lng?.();
-
-  return typeof lat === "number" && typeof lng === "number" ? [lat, lng] : null;
-}
-
-/**
- * Extracts coordinates from OriginsResponse response
- *
- * @param response - OriginsResponse containing location information
- * @returns {undefined} Longitude, latitude array or null if coordinates cannot be extracted
- */
-function extractDistanceMatrixOrigin(response): number[] | null {
-  const lat = response?.[0]?.locationLatLng?.lat?.();
-  const lng = response?.[0]?.locationLatLng?.lng?.();
-
-  return typeof lat === "number" && typeof lng === "number" ? [lat, lng] : null;
 }
 
 /**
