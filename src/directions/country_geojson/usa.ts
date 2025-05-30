@@ -6,7 +6,7 @@ export const usaGeoJson = {
       id: "USA",
       properties: {
         name: "United States of America",
-        source: "https://github.com/johan/world.geo.json/blob/master/countries/USA.geo.json"
+        source: "https://github.com/johan/world.geo.json/blob/master/countries/USA.geo.json",
       },
       geometry: {
         type: "MultiPolygon",
