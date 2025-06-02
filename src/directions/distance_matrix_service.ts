@@ -151,7 +151,7 @@ export class MigrationDistanceMatrixService {
              * Google's Distance.value is always in meters, so is Amazon Locations.
              * therefore no translation is needed.
              */
-            text: formatDistanceBasedOnUnitSystem(cell.Distance, { ...request, unitSystem }),
+            text: formatDistanceBasedOnUnitSystem(cell.Distance, unitSystem),
             value: cell.Distance,
           },
           duration: {

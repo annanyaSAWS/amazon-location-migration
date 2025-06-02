@@ -617,39 +617,39 @@ describe("Number Formatters", () => {
 describe("formatDistanceBasedOnUnitSystem", () => {
   describe("metric formatting", () => {
     test("formats distances under 1 km in meters", () => {
-      expect(formatDistanceBasedOnUnitSystem(500, { unitSystem: UnitSystem.METRIC })).toBe("500 m");
-      expect(formatDistanceBasedOnUnitSystem(950, { unitSystem: UnitSystem.METRIC })).toBe("950 m");
+      expect(formatDistanceBasedOnUnitSystem(500, UnitSystem.METRIC)).toBe("500 m");
+      expect(formatDistanceBasedOnUnitSystem(950, UnitSystem.METRIC)).toBe("950 m");
     });
 
     test("formats distances between 1-10 km with one decimal", () => {
-      expect(formatDistanceBasedOnUnitSystem(1500, { unitSystem: UnitSystem.METRIC })).toBe("1.5 km");
-      expect(formatDistanceBasedOnUnitSystem(9500, { unitSystem: UnitSystem.METRIC })).toBe("9.5 km");
+      expect(formatDistanceBasedOnUnitSystem(1500, UnitSystem.METRIC)).toBe("1.5 km");
+      expect(formatDistanceBasedOnUnitSystem(9500, UnitSystem.METRIC)).toBe("9.5 km");
     });
 
     test("formats distances between 10-999 km whole numbers with one decimal", () => {
-      expect(formatDistanceBasedOnUnitSystem(15000, { unitSystem: UnitSystem.METRIC })).toBe("15.0 km");
-      expect(formatDistanceBasedOnUnitSystem(999000, { unitSystem: UnitSystem.METRIC })).toBe("999.0 km");
+      expect(formatDistanceBasedOnUnitSystem(15000, UnitSystem.METRIC)).toBe("15.0 km");
+      expect(formatDistanceBasedOnUnitSystem(999000, UnitSystem.METRIC)).toBe("999.0 km");
     });
 
     test("formats distances 1000 km and above with separators without decimal", () => {
-      expect(formatDistanceBasedOnUnitSystem(1500000, { unitSystem: UnitSystem.METRIC })).toBe("1,500 km");
+      expect(formatDistanceBasedOnUnitSystem(1500000, UnitSystem.METRIC)).toBe("1,500 km");
     });
   });
 
   describe("imperial formatting", () => {
     test("formats distances under 10 miles with one decimal", () => {
-      expect(formatDistanceBasedOnUnitSystem(1609.34, { unitSystem: UnitSystem.IMPERIAL })).toBe("1.0 mi");
-      expect(formatDistanceBasedOnUnitSystem(12874.72, { unitSystem: UnitSystem.IMPERIAL })).toBe("8.0 mi");
+      expect(formatDistanceBasedOnUnitSystem(1609.34, UnitSystem.IMPERIAL)).toBe("1.0 mi");
+      expect(formatDistanceBasedOnUnitSystem(12874.72, UnitSystem.IMPERIAL)).toBe("8.0 mi");
     });
 
     test("formats distances between 10-999 miles with one decimal", () => {
-      expect(formatDistanceBasedOnUnitSystem(16093.4, { unitSystem: UnitSystem.IMPERIAL })).toBe("10.0 mi");
-      expect(formatDistanceBasedOnUnitSystem(1207008, { unitSystem: UnitSystem.IMPERIAL })).toBe("750.0 mi");
+      expect(formatDistanceBasedOnUnitSystem(16093.4, UnitSystem.IMPERIAL)).toBe("10.0 mi");
+      expect(formatDistanceBasedOnUnitSystem(1207008, UnitSystem.IMPERIAL)).toBe("750.0 mi");
     });
 
     test("formats distances 1000 miles and above with separators", () => {
       // 1609344 meters = 1000.000621 miles
-      expect(formatDistanceBasedOnUnitSystem(1609345, { unitSystem: UnitSystem.IMPERIAL })).toBe("1,000 mi");
+      expect(formatDistanceBasedOnUnitSystem(1609345, UnitSystem.IMPERIAL)).toBe("1,000 mi");
     });
   });
 });

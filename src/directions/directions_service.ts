@@ -226,7 +226,7 @@ export class MigrationDirectionsService {
                * Google's Distance.value is always in meters, so is Amazon Locations.
                * therefore no translation is needed.
                */
-              text: formatDistanceBasedOnUnitSystem(step.Distance, { ...options, unitSystem }),
+              text: formatDistanceBasedOnUnitSystem(step.Distance, unitSystem),
               value: step.Distance,
             },
             duration: {
@@ -263,7 +263,7 @@ export class MigrationDirectionsService {
              * Google's Distance.value is always in meters, so is Amazon Locations.
              * therefore no translation is needed.
              */
-            text: formatDistanceBasedOnUnitSystem(legOverview.Distance, { ...options, unitSystem }),
+            text: formatDistanceBasedOnUnitSystem(legOverview.Distance, unitSystem),
             value: legOverview.Distance,
           },
           duration: {

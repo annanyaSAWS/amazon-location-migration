@@ -9,11 +9,11 @@ import { usaGeoJson } from "./country_geojson/usa";
 import { myanmarGeoJson } from "./country_geojson/myanmar";
 import { liberiaGeoJson } from "./country_geojson/liberia";
 import { Position } from "geojson";
-type TurfPolygon = ReturnType<typeof turf.polygon>;
-
 import { CalculateRouteMatrixRequest, CalculateRoutesRequest } from "@aws-sdk/client-geo-routes";
 import { GeoPlacesClient, ReverseGeocodeCommand, ReverseGeocodeRequest } from "@aws-sdk/client-geo-places";
 import { CountryGeoJSON } from "./country_geojson/countryType";
+
+type TurfPolygon = ReturnType<typeof turf.polygon>;
 
 const KILOMETERS_TO_MILES_CONSTANT = 0.621371;
 const FEET_TO_MILES_CONSTANT = 5280; // 1 mile is 5,280 feet or 1.60934 kilometres
@@ -307,15 +307,14 @@ export function isPointInImperialCountry(coordinates: number[]): boolean {
  * 3. > = 1000 miles: Format in miles with no decimal places and thousands separator ("1,234 mi")
  *
  * @param meters - The distance in meters
- * @param options - Configuration object containing unitSystem preference
+ * @param unitSystem - UnitSystem preference
  * @returns Formatted distance string with unit suffix
  */
-export function formatDistanceBasedOnUnitSystem(meters: number, options: { unitSystem?: UnitSystem }): string {
-  const isImperial = options.unitSystem === UnitSystem.IMPERIAL;
+export function formatDistanceBasedOnUnitSystem(meters: number, unitSystem: UnitSystem): string {
   const kilometers = meters / 1000;
   const miles = kilometers * KILOMETERS_TO_MILES_CONSTANT;
 
-  if (isImperial) {
+  if (unitSystem === UnitSystem.IMPERIAL) {
     return formatImperialDistance(miles);
   }
   return formatMetricDistance(kilometers, meters);
