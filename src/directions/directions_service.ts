@@ -28,7 +28,7 @@ import {
 const KILOMETERS_TO_METERS_CONSTANT = 1000;
 // place_id and types needed for geocoded_waypoints response property, formatted_address needed for leg start_address and end_address
 const ROUTE_FIND_LOCATION_FIELDS = ["geometry", "place_id", "types", "formatted_address"];
-
+const AWS_COPYRIGHT = "© AWS, HERE";
 export class MigrationDirectionsService {
   // This will be populated by the top level module
   // that creates our GeoRoutes client
@@ -271,11 +271,11 @@ export class MigrationDirectionsService {
       const googleRoute: google.maps.DirectionsRoute = {
         bounds: bounds,
         legs: googleLegs,
+        copyrights: AWS_COPYRIGHT,
+        summary: route.MajorRoadLabels?.[0]?.RoadName?.Value || "",
         // TODO: These are not currently supported, but are required in the response
-        copyrights: "",
         overview_path: [],
         overview_polyline: "",
-        summary: "",
         warnings: [],
         waypoint_order: [],
       };
