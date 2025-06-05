@@ -324,19 +324,27 @@ export class MigrationDirectionsService {
    * @returns Formatted summary string of the route
    */
   private _getSummary(route: Route): string {
-    if (!route.MajorRoadLabels) return "";
+    if (!route.MajorRoadLabels) {
+      return "";
+    }
 
     // Get valid road names, filtering out undefined/null values
     const validRoads = route.MajorRoadLabels.map((label) => label?.RoadName?.Value).filter((roadName) => roadName);
 
-    if (!validRoads.length) return "";
+    if (!validRoads.length) {
+      return "";
+    }
 
-    if (validRoads.length === 1) return validRoads[0];
+    if (validRoads.length === 1) {
+      return validRoads[0];
+    }
 
     const firstValidRoad = validRoads[0];
     const lastValidRoad = validRoads[validRoads.length - 1];
 
-    if (firstValidRoad === lastValidRoad) return firstValidRoad;
+    if (firstValidRoad === lastValidRoad) {
+      return firstValidRoad;
+    }
 
     // Return combination of first and last valid roads
     return `${firstValidRoad} and ${lastValidRoad}`;
