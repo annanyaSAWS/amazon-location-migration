@@ -11,6 +11,7 @@ import {
   RoutePedestrianTravelStep,
   RouteTravelMode,
   RouteVehicleTravelStep,
+  Route,
 } from "@aws-sdk/client-geo-routes";
 
 import { DirectionsStatus, MigrationLatLng, MigrationLatLngBounds } from "../common";
@@ -272,7 +273,7 @@ export class MigrationDirectionsService {
         bounds: bounds,
         legs: googleLegs,
         copyrights: AWS_COPYRIGHT,
-        summary: route.MajorRoadLabels?.[0]?.RoadName?.Value || "",
+        summary: this._getSummary(route),
         // TODO: These are not currently supported, but are required in the response
         overview_path: [],
         overview_polyline: "",
@@ -298,6 +299,47 @@ export class MigrationDirectionsService {
     }
 
     return googleResponse;
+  }
+
+  /**
+   * Gets a summary string of the route based on major road names.
+   *
+   * Behavior:
+   *
+   * - Returns empty string if no road labels exist or no valid road names are found
+   * - Returns a single road name if only one valid road name exists
+   * - Returns a single road name if first and last valid road names are identical
+   * - Returns "Road A and Road B" format when first and last valid road names are different
+   *
+   * Examples:
+   *
+   * - [null, "Second", "Third"] -> "Second and Third"
+   * - ["First", null, "Third"] -> "First and Third"
+   * - [null, "Same", "Same"] -> "Same"
+   * - ["Only"] -> "Only"
+   * - [null, undefined, "Valid"] -> "Valid"
+   * - [null, undefined] -> ""
+   *
+   * @param route The route containing MajorRoadLabels
+   * @returns Formatted summary string of the route
+   */
+  private _getSummary(route: Route): string {
+    if (!route.MajorRoadLabels) return "";
+
+    // Get valid road names, filtering out undefined/null values
+    const validRoads = route.MajorRoadLabels.map((label) => label?.RoadName?.Value).filter((roadName) => roadName);
+
+    if (!validRoads.length) return "";
+
+    if (validRoads.length === 1) return validRoads[0];
+
+    const firstValidRoad = validRoads[0];
+    const lastValidRoad = validRoads[validRoads.length - 1];
+
+    if (firstValidRoad === lastValidRoad) return firstValidRoad;
+
+    // Return combination of first and last valid roads
+    return `${firstValidRoad} and ${lastValidRoad}`;
   }
 
   _constructGeocodedWaypointsFromResponses(
